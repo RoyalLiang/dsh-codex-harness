@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { apply, selectTurnStatus } from '../src/client/index.tsx'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { apply, RequestModelInfo, selectTurnStatus } from '../src/client/index.tsx'
 import { inject } from '../src/client/index.tsx'
 import { isCodexPresetId } from '../src/context.ts'
 
@@ -51,6 +52,7 @@ describe('Codex client settings', () => {
     } as never)
     expect(injected).toEqual([
       'conversation.input.right',
+      'conversation.composer.dock',
       'conversation.input.right',
       'conversation.input.overlay',
       'settings.plugin.item',
@@ -59,6 +61,22 @@ describe('Codex client settings', () => {
       .filter(entry => entry.name === 'settings.plugin.item')
       .map(({ name, key }) => ({ name, key })))
       .toEqual([{ name: 'settings.plugin.item', key: 'codex-preset-installer' }])
+  })
+
+  it('shows the last requested model below the composer without the old explanatory text', () => {
+    const props = {
+      useProjection: (key: string) => {
+        expect(key).toBe('codexRequestSelection')
+        return { provider: 'openai', model: 'gpt-test', effort: 'high' }
+      },
+      t: (key: string) => key,
+    }
+    const html = renderToStaticMarkup(RequestModelInfo(props as never))
+    expect(html).toContain('data-codex-request-model')
+    expect(html).toContain('openai/gpt-test')
+    expect(html).not.toContain('high')
+    expect(html).not.toContain('requestSelectionPending')
+    expect(RequestModelInfo({ ...props, useProjection: () => undefined } as never)).toBeNull()
   })
 
   it('declares every Remote namespace used by the preset manager', () => {

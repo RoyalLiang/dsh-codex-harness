@@ -38,13 +38,12 @@ const dialogFocus = vi.fn()
 let settings: Partial<CodexSettings>
 let writable: boolean
 let setSetting: ReturnType<typeof vi.fn>
-function render(capabilityNotice?: string) {
+function render() {
   hooks.cursor = 0
   const tree = ReasoningDropdown({
     useSettings: () => ({ value: settings as CodexSettings, writable }),
     setSetting,
     t: () => '',
-    capabilityNotice,
   })
   const all = elements(tree)
   for (const element of all) {
@@ -133,10 +132,12 @@ describe('Reasoning dropdown interaction', () => {
     expect(all.some(element => element.props.role === 'dialog')).toBe(false)
   })
 
-  it('restores trigger focus on Escape and exposes only a supplied capability notice', () => {
-    open()
-    expect(render().some(element => element.props.role === 'status')).toBe(false)
-    expect(render('Provider capability not yet verified').some(element => element.props.children === 'Provider capability not yet verified')).toBe(true)
+  it('restores trigger focus on Escape and shows only effort labels in the menu', () => {
+    const all = open()
+    const dialog = all.find(element => element.props.role === 'dialog')!
+    expect(elements(dialog).filter(element => element.type === 'button')).toHaveLength(6)
+    expect(elements(dialog).some(element => element.props.role === 'switch')).toBe(false)
+    expect(all.some(element => element.type === 'p' || element.props.role === 'status')).toBe(false)
     const preventDefault = vi.fn()
     listeners.get('keydown')!({ key: 'Escape', preventDefault })
     expect(preventDefault).toHaveBeenCalled()
@@ -144,15 +145,17 @@ describe('Reasoning dropdown interaction', () => {
     expect(render().some(element => element.props.role === 'dialog')).toBe(false)
   })
 
-  it('reports Fast save failures and keeps the menu open after a retry', async () => {
+  it('toggles Fast directly, reports save failures, and retries without opening the menu', async () => {
     setSetting.mockRejectedValueOnce(new Error('write rejected'))
-    open().find(element => element.props.role === 'switch')!.props.onChange({ target: { checked: true } })
+    render().find(element => element.props.role === 'switch')!.props.onClick()
     await Promise.resolve(); await Promise.resolve()
     expect(render().some(element => element.props.role === 'alert')).toBe(true)
-    render().find(element => element.props.role === 'switch')!.props.onChange({ target: { checked: true } })
+    render().find(element => element.props.role === 'switch')!.props.onClick()
     await Promise.resolve(); await Promise.resolve()
+    settings.fast = true
     const all = render()
-    expect(all.some(element => element.props.role === 'dialog')).toBe(true)
+    expect(all.find(element => element.props.role === 'switch')!.props['aria-checked']).toBe(true)
+    expect(all.some(element => element.props.role === 'dialog')).toBe(false)
     expect(all.some(element => element.props.role === 'alert')).toBe(false)
     expect(setSetting).toHaveBeenLastCalledWith('fast', true)
   })

@@ -1,4 +1,7 @@
 import { applyPromptSections } from '../src/prompt-sections.ts'
+import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import { bundledPresetDefinition } from '../src/installer.ts'
+import { DEFAULT_CODEX_PERSONA } from '../src/prompt.ts'
 import { describe, expect, it } from 'vitest'
 import {
   apply,
@@ -14,6 +17,61 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { CODEX_SETTINGS_ENTRY } from '../src/settings.ts'
 
 describe('Codex request settings', () => {
+  it('renders the bundled persona with only host-registered variables', () => {
+    const persona = (bundledPresetDefinition().plugins as Array<{ id: string; config?: { prefix?: string } }>).find(row => row.id === 'persona')
+    expect(persona?.config?.prefix).toBe(DEFAULT_CODEX_PERSONA)
+    const assembly = {
+      sections: [{ name: 'deployment:persona-prefix', text: persona!.config!.prefix! }],
+      contexts: [{ name: 'runtime:cwd', text: 'Current working directory: C:\\workspace' }],
+      tools: [], variables: { provider: 'relay', model: 'test-model' },
+    }
+    const result = applyCodexCapabilitySettings(assembly, CODEX_SETTINGS_ENTRY)
+    expect(renderPrompt(result)).toBe('You are Codex, a coding agent based on the test-model model.')
+    expect(result.contexts).toBe(assembly.contexts)
+  })
+
+  it.each(['deployment:persona', 'deployment:persona-prefix'])('overrides and normalizes %s while preserving the suffix and runtime context', name => {
+    const assembly = {
+      sections: [
+        { name: 'harness:identity', text: 'Harness' },
+        { name: 'harness:source', text: 'Source' },
+        { name, text: 'Original persona' },
+        { name: 'deployment:persona-suffix', text: 'Keep suffix' },
+      ],
+      contexts: [{ name: 'runtime:cwd', text: 'Current working directory: C:\\workspace' }],
+      tools: [], variables: { provider: 'relay', model: 'test-model' },
+    }
+    const shared = applyCodexCapabilitySettings(assembly, { ...CODEX_SETTINGS_ENTRY, persona: 'Shared {{model}}' })
+    expect(shared.sections[0]).toEqual({ name, text: 'Shared test-model' })
+    const preset = applyPromptSections(shared, { persona: 'Preset {{model}}' })
+    expect(renderPrompt(preset)).toBe('Preset test-model\n\nSource\n\nKeep suffix')
+    expect(preset.contexts).toBe(assembly.contexts)
+    expect(assembly.sections[2]?.text).toBe('Original persona')
+    for (const invalid of ['{{cwd}}', '{{unknown}}', '{{bad-name}}']) {
+      const error = invalid === '{{bad-name}}' ? 'malformed prompt variable reference' : `unknown prompt variable "${invalid}"`
+      expect(() => renderPrompt(applyCodexCapabilitySettings(assembly, { ...CODEX_SETTINGS_ENTRY, persona: invalid }))).toThrow(error)
+      expect(() => renderPrompt(applyPromptSections(shared, { persona: invalid }))).toThrow(error)
+    }
+  })
+
+  it.each(['deployment:persona', 'deployment:persona-prefix'])('migrates only the exact legacy default in %s and saved settings', name => {
+    const legacy = `${DEFAULT_CODEX_PERSONA} Your working directory is {{cwd}}.`
+    const assembly = {
+      sections: [{ name, text: legacy }], contexts: [], tools: [],
+      variables: { provider: 'relay', model: 'test-model' },
+    }
+    const settings = { ...CODEX_SETTINGS_ENTRY, persona: legacy }
+    expect(renderPrompt(applyCodexCapabilitySettings(assembly, settings))).toBe('You are Codex, a coding agent based on the test-model model.')
+    expect(renderPrompt(applyPromptSections(assembly, {}))).toBe('You are Codex, a coding agent based on the test-model model.')
+    expect(renderPrompt(applyPromptSections(assembly, { persona: legacy }))).toBe('You are Codex, a coding agent based on the test-model model.')
+    expect(assembly.sections[0]?.text).toBe(legacy)
+    const custom = { ...assembly, sections: [{ name, text: `Custom: ${legacy}` }] }
+    expect(() => renderPrompt(applyCodexCapabilitySettings(custom, settings))).toThrow('unknown prompt variable "{{cwd}}"')
+    expect(() => renderPrompt(applyPromptSections(custom, {}))).toThrow('unknown prompt variable "{{cwd}}"')
+    expect(() => renderPrompt(applyCodexCapabilitySettings(assembly, { ...settings, persona: `Custom: ${legacy}` }))).toThrow('unknown prompt variable "{{cwd}}"')
+    expect(() => renderPrompt(applyPromptSections(assembly, { persona: `Custom: ${legacy}` }))).toThrow('unknown prompt variable "{{cwd}}"')
+  })
+
   it('resolves capabilities after the request waterfall without changing frozen history', async () => {
     const order: string[] = []
     let listener: ((payload: { signal: AbortSignal }, next: () => Promise<unknown>) => Promise<unknown>) | undefined

@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import z from '@deepseek-ai/schemastery'
+import { migrateLegacyCodexPersona } from './prompt.ts'
 
 export interface Config { persona?: string; harnessSourcePrompt?: string; webSurfacePrompt?: string }
 export const Config: z<Config> = z.object({ persona: z.string(), harnessSourcePrompt: z.string(), webSurfacePrompt: z.string() })
@@ -14,12 +15,16 @@ export function applyPromptSections(assembly: PromptAssembly, config: Config): P
   variables.webUrl ??= assembly.sections.find(s => s.name === 'app:web-surface')?.text.match(/^You are interacting with the user through the DeepSeek Harness Web GUI at (.+?)\. When/u)?.[1]
   const values: Record<string, string | undefined> = {
     'deployment:persona': config.persona,
+    'deployment:persona-prefix': config.persona,
     'harness:source': config.harnessSourcePrompt,
     'app:web-surface': config.webSurfacePrompt,
   }
   return { ...assembly, sections: assembly.sections.map(section => {
-    const text = values[section.name]
-    return text === undefined ? section : { ...section, text: text.replace(/\{\{([\w.-]+)\}\}/g, (whole, key: string) => variables[key] ?? whole) }
+    const persona = section.name === 'deployment:persona' || section.name === 'deployment:persona-prefix'
+    const text = persona ? migrateLegacyCodexPersona(values[section.name]) : values[section.name]
+    if (text !== undefined) return { ...section, text: text.replace(/\{\{([\w.-]+)\}\}/g, (whole, key: string) => variables[key] ?? whole) }
+    const migrated = persona ? migrateLegacyCodexPersona(section.text) : section.text
+    return migrated === section.text ? section : { ...section, text: migrated! }
   }) }
 }
 export function apply(ctx: Context, config: Config): void {

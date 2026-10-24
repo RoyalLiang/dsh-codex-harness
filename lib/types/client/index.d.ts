@@ -43,20 +43,11 @@ declare const en: {
     readonly contextSize: "Context size";
     readonly contextSizeDescription: "Next request capacity in K tokens.";
     readonly contextRestore: "Restore model default";
-    readonly reasoningMenuTitle: "Codex Reasoning & Mode";
+    readonly reasoningMenuTitle: "Reasoning Effort";
     readonly reasoningEffortLabel: "Reasoning Effort";
-    readonly fastDesc: "Request priority service when the provider supports it.";
     readonly effortDefaultLabel: "Default";
-    readonly effortDefaultDesc: "Inherit session or provider defaults";
     readonly reasoningSaveFailed: "Could not save settings. Please retry.";
-    readonly requestSelection: "Last request configuration";
-    readonly providerDefault: "Provider default";
-    readonly requestSelectionPending: "Applies to the next request. Effort is mapped to levels declared by the model; unavailable native controls keep provider defaults. Fast requests priority service only on Responses routes.";
-    readonly effortLowDesc: "Lightweight thinking for quick edits";
-    readonly effortMedDesc: "Balanced thinking for standard tasks (Recommended)";
-    readonly effortHighDesc: "Deep reasoning for complex logic";
-    readonly effortXHighDesc: "Extra high reasoning for tricky bugs";
-    readonly effortMaxDesc: "Max reasoning for formal proofs & audits";
+    readonly requestSelection: "Last used model";
     readonly promptCardTitle: "Codex Harness";
     readonly promptCardDescription: "Edit presets, Codex capabilities, and the operating prompt. Activity status is global.";
     readonly otherCapabilitiesLabel: "Global capabilities";
@@ -80,7 +71,7 @@ declare const en: {
     readonly capabilityActivityHint: "Show request, reply, and compaction status beside the conversation.";
     readonly promptCustomizationLabel: "Prompt customization";
     readonly personaLabel: "Persona";
-    readonly personaHint: "Deployment identity and role. Supports {{model}} and {{cwd}}.";
+    readonly personaHint: "Deployment identity and role. Supports {{model}} and {{provider}}.";
     readonly sourcePromptLabel: "DSH Core source instructions";
     readonly sourcePromptHint: "Guidance about the DSH checkout and working directory. Supports {{sourceRoot}}.";
     readonly webPromptLabel: "DSH Core Web instructions";
@@ -169,13 +160,12 @@ interface InputSettingsControlInjected {
 }
 /** One editor per preset; only display preferences are global. */
 export declare function PromptSettingsCard(props: PropsRuntime<'settings.plugin.item'> & InjectFace<InputSettingsControlInjected> & PropsLocale<'codex'>): import("react").JSX.Element | null;
-/** The legacy composer seat is a compact inline row, not a menu panel. */
-export declare function FastModeFallback(props: Pick<PropsRuntime<'conversation.input.right'>, 'sessionId' | 'useSessions'> & InjectFace<InputSettingsControlInjected> & PropsLocale<'codex'>): import("react").JSX.Element | null;
 type LegacyOverlayProps = PropsRuntime<typeof LEGACY_OVERLAY_SLOT> & InjectFace<InputSettingsControlInjected> & PropsLocale<'codex'>;
 type ActivityProps = Pick<LegacyOverlayProps, 'sessionId' | 'useSession' | 'useSessions' | 'useProjection' | 'useSettings' | 't'>;
 type ActivityFallback = ReturnType<typeof modelActivity>;
-/** Show the persisted last request, separately from controls for the next one. */
-export declare function RequestReasoningControl(props: Pick<PropsRuntime<'conversation.input.right'>, 'useProjection'> & InjectFace<InputSettingsControlInjected> & PropsLocale<'codex'>): import("react").JSX.Element;
+/** Persisted model used by the last request, displayed below the composer. */
+export declare function RequestModelInfo(props: Pick<PropsRuntime<'conversation.composer.dock'>, 'useProjection'> & PropsLocale<'codex'>): import("react").JSX.Element | null;
+export declare function RequestReasoningControl(props: InjectFace<InputSettingsControlInjected> & PropsLocale<'codex'>): import("react").JSX.Element;
 /** Prefer the session snapshot when an older projection host only exposes null. */
 export declare function resolveActivity(projectedActivity: CodexActivity | null | undefined, fallbackActivity: ActivityFallback): CodexActivity | null;
 export declare function ActivityLine({ sessionId: _sessionId, useSession, useSessions: _useSessions, useProjection, useSettings, t, position, }: ActivityProps & {

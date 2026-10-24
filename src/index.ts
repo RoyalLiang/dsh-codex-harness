@@ -35,6 +35,7 @@ import {
   DEFAULT_CODEX_SYSTEM_PROMPT,
   DEFAULT_DSH_CORE_SOURCE_PROMPT,
   DEFAULT_DSH_CORE_WEB_PROMPT,
+  migrateLegacyCodexPersona,
   resolveCodexSystemPrompt,
 } from './prompt.ts'
 import {
@@ -384,11 +385,12 @@ export function codexProviderApi(ctx: Context, provider: string, model?: string)
 /** Put the agent persona first and omit the generic Harness identity opener. */
 export function normalizeCodexPromptAssembly(assembly: PromptAssembly): PromptAssembly {
   const sections = assembly.sections.filter(section => section.name !== 'harness:identity')
-  const persona = sections.find(section => section.name === 'deployment:persona')
+  const persona = sections.find(section => section.name === 'deployment:persona-prefix')
+    ?? sections.find(section => section.name === 'deployment:persona')
   if (persona === undefined) return { ...assembly, sections }
   return {
     ...assembly,
-    sections: [persona, ...sections.filter(section => section.name !== 'deployment:persona')],
+    sections: [persona, ...sections.filter(section => section !== persona)],
   }
 }
 
@@ -419,12 +421,14 @@ function interpolateCodexPrompt(text: string, variables: Record<string, string |
 /** Apply user-editable Persona and DSH Core runtime prompt templates. */
 function applyCodexPromptOverrides(assembly: PromptAssembly, settings: CodexSettings): PromptAssembly {
   const overrides: Record<string, string | undefined> = {
-    'deployment:persona': settings.persona,
+    'deployment:persona': migrateLegacyCodexPersona(settings.persona),
+    'deployment:persona-prefix': migrateLegacyCodexPersona(settings.persona),
     'harness:source': settings.harnessSourcePrompt,
     'app:web-surface': settings.webSurfacePrompt,
   }
   const defaults: Record<string, string> = {
     'deployment:persona': DEFAULT_CODEX_PERSONA,
+    'deployment:persona-prefix': DEFAULT_CODEX_PERSONA,
     'harness:source': DEFAULT_DSH_CORE_SOURCE_PROMPT,
     'app:web-surface': DEFAULT_DSH_CORE_WEB_PROMPT,
   }
@@ -453,6 +457,7 @@ export function applyCodexCapabilitySettings(
   assembly: PromptAssembly,
   settings: CodexSettings,
 ): PromptAssembly {
+  assembly = applyPromptSections(assembly, {})
   const disabled = new Set<string>()
   for (const [setting, names] of Object.entries(CODEX_TOOL_NAMES)) {
     if (settings[setting as keyof typeof CODEX_TOOL_NAMES]) continue

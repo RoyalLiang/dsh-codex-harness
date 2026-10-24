@@ -42,7 +42,12 @@ export const DEFAULT_CODEX_SYSTEM_PROMPT = String.raw`## General
 `
 
 /** Default deployment Persona template used by the Codex preset. */
-export const DEFAULT_CODEX_PERSONA = String.raw`You are Codex, a coding agent based on the {{model}} model. Your working directory is {{cwd}}.`
+export const DEFAULT_CODEX_PERSONA = String.raw`You are Codex, a coding agent based on the {{model}} model.`
+
+/** Upgrade only the exact shipped default; custom variable references remain strict. */
+export function migrateLegacyCodexPersona(text: string | undefined): string | undefined {
+  return text === `${DEFAULT_CODEX_PERSONA} Your working directory is {{cwd}}.` ? DEFAULT_CODEX_PERSONA : text
+}
 
 /** Default DSH Core source-checkout guidance template. */
 export const DEFAULT_DSH_CORE_SOURCE_PROMPT = String.raw`The DeepSeek Harness implementation checkout is at {{sourceRoot}}. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.`

@@ -1,6 +1,6 @@
 # Codex 行为适配：落地设计与验收
 
-更新日期：2026-10-24。适用范围：RoyalLiang/dsh-codex-harness 当前工作区，包版本仍为 0.2.23。本文记录设计约束与验收门槛；源码存在、单元测试、宿主加载、真实提供方请求是不同证据，不能互相替代。本文不表示已发布、已部署或已完成全部验收。
+更新日期：2026-10-24。适用范围：RoyalLiang/dsh-codex-harness 0.2.24。本文记录设计约束与验收门槛；源码存在、单元测试、宿主加载、真实提供方请求是不同证据，不能互相替代。版本发布不代表已部署到实际使用 Profile 或已完成全部验收。
 
 ## 目标与成功条件
 
@@ -103,7 +103,7 @@ flowchart TD
 
 | 编号 | 操作或检查 | 通过条件 | 当前状态 |
 | --- | --- | --- | --- |
-| A01 | `pnpm check`、`pnpm test`、`pnpm build` | 同一源码全部成功，失败/跳过/环境限制分开记录 | 类型检查与构建已通过；完整 Vitest 19 个文件、201 项全部通过 |
+| A01 | `pnpm check`、`pnpm test`、`pnpm build` | 同一源码全部成功，失败/跳过/环境限制分开记录 | 类型检查与构建已通过；完整 Vitest 19 个文件、208 项全部通过 |
 | A02 | 实际 DSH ASAR 宿主兼容检查 | 静态模块契约符合，且 ConfigForms、Typert、registry、LLM 与插件启动可加载；真实 SystemPrompt 保留 persona、装配 Codex 提示与 Default 动态指导 | 44 个模块已静态核对；本轮当前源码在 2.0.19-next 真实宿主模块上的隔离集成已重跑通过，退出码 0 |
 | A03 | 隔离 Profile 安装构建并重启 | 包来源与构建对应提交，插件启用且无启动错误 | 待验证 |
 | A04 | 编辑预设、建副本、保存过期版本 | 用户配置保留、内置只读、旧 revision 不覆盖修改 | 待验证 |
@@ -117,11 +117,11 @@ flowchart TD
 | C03 | 压缩成功、HTTP 失败、流中取消 | 仅成功提交；失败保留历史；取消不作为回退错误 | 待验证 |
 | C04 | 收集真实 usage | 区分输入/缓存/输出/摘要，未知不冒充零 | 待验证 |
 | T01 | 精确/空白补丁、重复上下文、数值漂移 | 合法可应用；歧义和漂移拒绝且文件不变 | 18 项补丁测试已通过；真实宿主操作待验收 |
-| U01 | Default/五档/Fast 保存 | 刷新后正确、点击不乱序、错误可见、只读不写 | 实现完成；UI 自动回归已通过，真实 UI 待验收 |
-| U02 | 键盘、窄屏、失焦与卸载 | 名称可访问，Escape 与焦点恢复，布局及事件清理正确 | 实现完成；UI 自动回归已通过，真实 UI 待验收 |
+| U01 | Default/五档/Fast 保存 | 刷新后正确、点击不乱序、错误可见、只读不写 | UI 自动回归及隔离 Chromium 交互/布局通过；实际 Profile GUI 待验收 |
+| U02 | 键盘、窄屏、失焦与卸载 | 名称可访问，Escape 与焦点恢复，布局及事件清理正确 | UI 自动回归及隔离 Chromium 交互/布局通过；实际 Profile GUI 待验收 |
 | B01 | 修 bug、多文件任务、长会话、中途纠正 | 调查后改动，有验证与汇报；压缩后目标约束不丢失 | 待验证 |
 
-本轮当前源码自动检查已重跑通过：`pnpm test` 共 19 个测试文件、201 项全部通过，包含新增 8 项请求与压缩边界回归；`pnpm run check`、`pnpm run build` 均通过。测试最初受沙箱 `spawn EPERM` 限制，经批准以更宽权限重跑同一命令后通过；此前 React 18 ref 测试 harness 的读取问题已修正。另有 `git diff --check` 通过记录。这些自动检查不等同于真实 UI 或提供方验收。
+0.2.24 自动检查已重跑通过：`pnpm test` 共 19 个测试文件、208 项全部通过；`pnpm run check`、`pnpm run build` 与 `git diff --check` 通过。新增真实宿主模块场景覆盖旧 Persona `{{cwd}}`、后缀仅装配一次、Fast 与 High 同用、Default 继承。编译后的 `lib/client.js` 在 Chromium 中通过六档标签、Fast 与 High 独立保存、重挂载后读取、保存失败重试、Escape 焦点恢复、只读、模型显示位置以及 1100px/390px 布局断言；宿主属性和设置接口使用隔离 fixture。自动导航与截图受本机环境限制，浏览器场景通过 CDP 加载产物并验证 DOM；没有实际使用 Profile 的完整 GUI、真实提供方或性能验收结果。
 
 实际 ASAR 的 44 个模块完成静态核对后，本轮已使用当前源码在 `dsh-desktop-next@2.0.19-next`（Electron 44.0.0 / Node 24.18.1）重跑 `scripts/verify-host-compat.mjs`，退出码 0，输出 `PASS: actual host loader`。真实服务范围为 loader、registry、LLM、gateway、SettingsForms 与 SystemPrompt；Codex 四个核心工具注册、persona 保留、Codex 提示装配与 Default 动态指导断言均通过。配置编辑器、工具执行器、会话和非目标依赖仍为隔离 fixture；没有调用提供方或改动已有 Profile。原始日志见工作区 `.audit/host-compat.stdout.log` 和 `.audit/host-compat.stderr.log`。
 

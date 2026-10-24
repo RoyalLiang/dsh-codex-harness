@@ -11,11 +11,13 @@ assert(asar, 'Set DSH_HOST_ASAR to the installed app.asar path')
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const hostRequire = createRequire(pathToFileURL(resolve(asar, 'package.json')))
 const host = name => import(pathToFileURL(hostRequire.resolve(name)).href)
-const [{ Context }, { TypertRegistry }, loader, { TypertGatewayService }, { LlmRuntime }, { SettingsForms }, { SystemPrompt }] = await Promise.all([
+const [{ Context }, { TypertRegistry }, loader, { TypertGatewayService }, { LlmRuntime }, { SettingsForms }, { SystemPrompt, renderPrompt }, persona, { createScope }] = await Promise.all([
   host('@deepseek-ai/cordis'), host('@deepseek-ai/dsh-typert-registry'),
   host('@deepseek-ai/dsh-typert-loader'), host('@deepseek-ai/dsh-api-gateway'), host('@deepseek-ai/dsh-llm'),
   host('@deepseek-ai/dsh-settings'), host('@deepseek-ai/dsh-system-prompt'),
+  host('@deepseek-ai/dsh-persona'), host('@deepseek-ai/dsh-scope'),
 ])
+const z = hostRequire('@deepseek-ai/schemastery')
 const PACKAGE = '@shuind/dsh-codex-harness'
 const { TYPERT } = await import(pathToFileURL(resolve(repo, 'lib/typert.js')).href)
 loader.validateTypertManifest(PACKAGE, TYPERT)
@@ -62,6 +64,15 @@ ctx.provide('pluginPackages', {
   },
 })
 ctx.provide('remoteAccess', { decide: () => { throw new Error('Unexpected non-owner access') } })
+const requests = []
+const originalFetch = globalThis.fetch
+// Install the sink before Codex wraps fetch so the real transport middleware is exercised.
+globalThis.fetch = async (input, init) => {
+  const request = new Request(input, init)
+  assert.equal(request.url, 'https://fixture.invalid/v1/responses')
+  requests.push(JSON.parse(await request.text()))
+  return Response.json({ ok: true })
+}
 try {
   await ctx.plugin(TypertRegistry).await()
   await ctx.plugin(LlmRuntime).await()
@@ -113,10 +124,87 @@ try {
   const live = ctx.settings.describe().find(row => row.ns === descriptor.ns)
   await ctx.settings.update(live.ns, { reasoningEffort: 'default' }, live.revision)
   assert.equal((await assembled()).contexts.find(context => context.name === 'codex:reasoning').text, '')
+
+  const setCodex = async patch => {
+    const current = ctx.settings.describe().find(row => row.ns === descriptor.ns)
+    await ctx.settings.update(current.ns, patch, current.revision)
+  }
+  const legacyPersona = 'You are Codex, a coding agent based on the {{model}} model. Your working directory is {{cwd}}.'
+  const scopeKey = {}
+  const scope = createScope(ctx, scopeKey)
+  try {
+    // Mount the actual host persona row as an existing copied preset would.
+    await scope.ctx.plugin(persona, { prefix: legacyPersona, suffix: 'COPIED PRESET SUFFIX', includeRuntimeContext: true }).await()
+    await scope.ctx.plugin({ inject: ['systemPrompt'], apply(scoped) {
+      scoped.systemPrompt.variable('provider', () => 'local-fixture')
+      scoped.systemPrompt.variable('model', () => 'fixture-model')
+      scoped.systemPrompt.context({ name: 'fixture:cwd', order: 1, text: `Current working directory: ${temporaryHome}` })
+    } }).await()
+    for (const savedPersona of [legacyPersona, 'You are Codex, a coding agent based on the {{model}} model.']) {
+      await setCodex({ persona: savedPersona })
+      const assembly = await ctx.systemPrompt.assemble({ scope: scopeKey })
+      assert.deepEqual(Object.keys(assembly.variables).sort(), ['model', 'provider'])
+      const rendered = renderPrompt(assembly)
+      assert(rendered.startsWith('You are Codex, a coding agent based on the fixture-model model.'))
+      assert.equal(rendered.split('COPIED PRESET SUFFIX').length - 1, 1)
+      assert(!rendered.includes('{{cwd}}'))
+      assert(assembly.contexts.some(context => context.name === 'fixture:cwd' && context.text.includes(temporaryHome)))
+    }
+    await setCodex({ persona: 'Custom persona {{unknown}}' })
+    const invalidAssembly = await ctx.systemPrompt.assemble({ scope: scopeKey })
+    assert.throws(() => renderPrompt(invalidAssembly), /unknown prompt variable/)
+  } finally {
+    await scope.dispose()
+    await setCodex({ persona: 'You are Codex, a coding agent based on the {{model}} model.' })
+  }
+
+  // A local adapter exercises the actual host LLM runtime; intercepted fetch never leaves this process.
+  const providerConfig = { providers: { 'local-fixture': { api: 'openai-responses' } } }
+  const providerSchema = z.object({ providers: z.any() })
+  Object.assign(providerSchema.meta, { volatile: true })
+  const providerFiber = ctx.plugin({ name: 'fixture-provider-config', Config: providerSchema, apply() {} }, providerConfig)
+  entries.push({ id: 'llm-pi-ai', options: { id: 'llm-pi-ai', name: 'fixture-provider-config', config: providerConfig }, fiber: providerFiber })
+  await providerFiber.await()
+  assert.equal(codex.codexProviderApi(ctx, 'local-fixture', 'fixture-model'), 'openai-responses')
+  const model = { provider: 'local-fixture', id: 'fixture-model', name: 'Local fixture', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] } }
+  const unregisterAdapter = ctx.llm.registerAdapter(['local-fixture'], {
+    providerInfo: () => ({ id: 'local-fixture', name: 'Local fixture' }),
+    providerRetryPolicy: () => undefined,
+    resolveModel: async () => model,
+    prepareCall: async () => ({ model, stream: async function* (options) {
+      await globalThis.fetch('https://fixture.invalid/v1/responses', { method: 'POST', body: JSON.stringify({ model: options.model, reasoning: { effort: options.reasoningEffort } }) })
+      yield { type: 'finish', reason: { kind: 'stop' }, usage: { inputTokens: 0, outputTokens: 0 } }
+    } }),
+  })
+  try {
+    const signal = new AbortController().signal
+    for (const [fast, effort, originalEffort, expected] of [
+      [true, 'high', 'low', 'high'], [false, 'high', 'low', 'high'],
+      [true, 'default', 'low', 'low'], [true, 'default', undefined, undefined],
+    ]) {
+      const base = Object.freeze({ provider: 'local-fixture', model: 'fixture-model', ...(originalEffort === undefined ? {} : { reasoningEffort: originalEffort }) })
+      await setCodex({ fast, reasoningEffort: effort })
+      const request = await ctx.waterfall('agent/request', { signal }, () => Promise.resolve(base))
+      assert.equal(request.reasoningEffort, expected)
+      assert.equal(request.serviceTier, undefined)
+      const chunks = []
+      for await (const chunk of ctx.llm.stream({ ...request, signal, messages: [] })) chunks.push(chunk)
+      assert.equal(chunks.at(-1)?.reason?.kind, 'stop', JSON.stringify(chunks))
+      assert.equal(requests.at(-1)?.reasoning.effort, expected)
+      assert.equal(requests.at(-1)?.service_tier, fast ? 'priority' : undefined)
+      assert.equal(base.reasoningEffort, originalEffort)
+    }
+    assert.equal(requests.length, 4)
+  } finally {
+    unregisterAdapter()
+  }
   const hostManifest = JSON.parse(readFileSync(resolve(asar, 'package.json'), 'utf8'))
   console.log(`Host: ${hostManifest.name}@${hostManifest.version}; Node ${process.versions.node}; Electron ${process.versions.electron}`)
-  console.log('PASS: actual host loader + registry + LLM + gateway + SettingsForms; Codex core tools and prompt, persona preservation, Default reasoning guidance, Config edits, strict validation, dispose and reactivate')
+  console.log('PASS: actual host loader + registry + LLM + gateway + SettingsForms; Codex core tools, Config edits, strict validation, dispose and reactivate')
+  console.log('PASS: saved/copied legacy cwd persona strict rendering with provider/model variables only; suffix once; runtime context preserved; custom unknown variable rejected')
+  console.log('PASS: Fast+High and normal+High preserve reasoning independently; Default preserves low/unspecified; priority transport follows Fast; four local requests, zero network calls')
 } finally {
   await ctx.fiber.dispose()
+  globalThis.fetch = originalFetch
   rmSync(temporaryHome, { recursive: true, force: true })
 }

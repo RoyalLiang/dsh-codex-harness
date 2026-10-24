@@ -21,7 +21,7 @@
 ## 安装
 
 ```sh
-dsh plugin --profile desktop add 'git+ssh://git@github.com/RoyalLiang/dsh-codex-harness.git#v0.2.23' --ignore-scripts
+dsh plugin --profile desktop add 'git+ssh://git@github.com/RoyalLiang/dsh-codex-harness.git#v0.2.24' --ignore-scripts
 ```
 
 Web Profile 可将 `desktop` 替换为 `web`。需要已有 GitHub SSH 访问授权。仓库标签包含预构建运行文件，安装无需本地 TypeScript 或构建工具；版本固定到标签，后续升级时显式替换标签。
@@ -65,10 +65,11 @@ apiKeyEnv: OPENAI_API_KEY
 ### Fast、思考强度与上下文
 
 - **思考强度**：Default 继承当前请求或提供方设置；Low / Medium / High / XHigh / Max 使用宿主模型能力映射合法 `reasoningEffort`，Max 不保证发送字面值 `max`。未知能力不强制原生参数；简短内部验证指导与原生预算分开，不要求公开思考链。
-- **Fast**：在 Codex 模式的模型菜单中开启，向支持的 Responses 请求发送 `service_tier: "priority"`，与思考强度分别控制；提供方可用性和实际延迟需验证。
+- **Fast**：通过输入栏中的独立滑动开关开启，向支持的 Responses 请求发送 `service_tier: "priority"`，与思考强度分别控制；提供方可用性和实际延迟需验证。
+- **使用模型**：聊天框下方显示上次实际请求使用的提供方和模型。
 - **上下文容量**：点击输入栏旁的上下文用量指示器，可设置 `1K`–`1000K` tokens；下一次请求和自动压缩使用该值。
 
-当前工作区保留完整请求历史、宿主 persona 和提示词原始顺序。已有类型检查、构建和完整回归记录（19 个测试文件、201 项，含新增 8 项请求与压缩边界回归）；真实宿主安装、GUI、提供方请求和性能仍待验收，详见[验收记录](docs/codex-landing.zh.md)，不能将工作区实现视为已部署。
+0.2.24 保留完整请求历史、宿主 persona 和提示词原始顺序。类型检查、构建和完整回归（19 个测试文件、208 项）已通过；另通过真实宿主模块的旧 Persona 变量与请求设置场景，以及编译产物在 Chromium 中的保存、失败重试、键盘、只读和 390px 布局断言。浏览器场景采用隔离宿主属性与设置接口，截图接口受本机环境限制；真实提供方请求、性能及实际使用 Profile 的完整 GUI 验收仍未完成，详见[验收记录](docs/codex-landing.zh.md)。
 
 ## License
 

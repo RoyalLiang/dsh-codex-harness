@@ -102,20 +102,11 @@ const en = {
   contextSize: 'Context size',
   contextSizeDescription: 'Next request capacity in K tokens.',
   contextRestore: 'Restore model default',
-  reasoningMenuTitle: 'Codex Reasoning & Mode',
+  reasoningMenuTitle: 'Reasoning Effort',
   reasoningEffortLabel: 'Reasoning Effort',
-  fastDesc: 'Request priority service when the provider supports it.',
   effortDefaultLabel: 'Default',
-  effortDefaultDesc: 'Inherit session or provider defaults',
   reasoningSaveFailed: 'Could not save settings. Please retry.',
-  requestSelection: 'Last request configuration',
-  providerDefault: 'Provider default',
-  requestSelectionPending: 'Applies to the next request. Effort is mapped to levels declared by the model; unavailable native controls keep provider defaults. Fast requests priority service only on Responses routes.',
-  effortLowDesc: 'Lightweight thinking for quick edits',
-  effortMedDesc: 'Balanced thinking for standard tasks (Recommended)',
-  effortHighDesc: 'Deep reasoning for complex logic',
-  effortXHighDesc: 'Extra high reasoning for tricky bugs',
-  effortMaxDesc: 'Max reasoning for formal proofs & audits',
+  requestSelection: 'Last used model',
   promptCardTitle: 'Codex Harness',
   promptCardDescription: 'Edit presets, Codex capabilities, and the operating prompt. Activity status is global.',
   otherCapabilitiesLabel: 'Global capabilities',
@@ -139,7 +130,7 @@ const en = {
   capabilityActivityHint: 'Show request, reply, and compaction status beside the conversation.',
   promptCustomizationLabel: 'Prompt customization',
   personaLabel: 'Persona',
-  personaHint: 'Deployment identity and role. Supports {{model}} and {{cwd}}.',
+  personaHint: 'Deployment identity and role. Supports {{model}} and {{provider}}.',
   sourcePromptLabel: 'DSH Core source instructions',
   sourcePromptHint: 'Guidance about the DSH checkout and working directory. Supports {{sourceRoot}}.',
   webPromptLabel: 'DSH Core Web instructions',
@@ -170,20 +161,11 @@ const zh = {
   contextSize: '\u4e0a\u4e0b\u6587\u5927\u5c0f',
   contextSizeDescription: '\u8bbe\u7f6e\u4e0b\u6b21\u8bf7\u6c42\u7684\u4e0a\u4e0b\u6587\u5bb9\u91cf\uff0c\u5355\u4f4d\u4e3a K tokens\u3002',
   contextRestore: '\u6062\u590d\u6a21\u578b\u9ed8\u8ba4\u503c',
-  reasoningMenuTitle: 'Codex \u601d\u8003\u4e0e\u6a21\u5f0f\u8bbe\u7f6e',
+  reasoningMenuTitle: '推理等级',
   reasoningEffortLabel: '\u601d\u8003\u5f3a\u5ba6 (Reasoning Effort)',
-  fastDesc: '提供方支持时请求优先服务。',
   effortDefaultLabel: '默认（继承）',
-  effortDefaultDesc: '继承会话或提供方默认设置',
   reasoningSaveFailed: '无法保存设置，请重试。',
-  requestSelection: '最近请求配置',
-  providerDefault: '提供方默认',
-  requestSelectionPending: '设置作用于下次请求。思考档位映射到模型声明的级别；原生控制不可用时沿用提供方默认。Fast 仅在 Responses 路由请求优先服务。',
-  effortLowDesc: '\u8f7b\u91cf\u601d\u8003 \u00b7 \u5feb\u901f\u7b80\u5355\u4fee\u6539',
-  effortMedDesc: '\u5e73\u8861\u601d\u8003 \u00b7 \u5e38\u89c4\u529f\u80fd\u4e0e\u91cd\u6784 (\u63a8\u8350)',
-  effortHighDesc: '\u6df1\u5ea6\u601d\u8003 \u00b7 \u590d\u6742\u903b\u8f91\u4e0e\u67b6\u6784\u5206\u6790',
-  effortXHighDesc: '\u8d85\u5f3a\u63a8\u7406 \u00b7 \u7591\u96be Bug \u4e0e\u7cfb\u7edf\u91cd\u6784',
-  effortMaxDesc: '\u6781\u9650\u601d\u8003 \u00b7 \u5f62\u5f0f\u5316\u9a8c\u8bc1\u4e0e\u590d\u6742\u8bc1\u660e',
+  requestSelection: '上次使用模型',
   promptCardTitle: 'Codex Harness',
   promptCardDescription: '\u7f16\u8f91\u9884\u8bbe\u3001Codex \u80fd\u529b\u548c\u64cd\u4f5c\u63d0\u793a\u8bcd\uff0c\u6d3b\u52a8\u72b6\u6001\u662f\u5168\u5c40\u8bbe\u7f6e\u3002',
   otherCapabilitiesLabel: '\u5168\u5c40\u80fd\u529b',
@@ -207,7 +189,7 @@ const zh = {
   capabilityActivityHint: '\u5728\u5bf9\u8bdd\u65c1\u663e\u793a\u8bf7\u6c42\u3001\u56de\u590d\u548c\u538b\u7f29\u72b6\u6001\u3002',
   promptCustomizationLabel: '\u63d0\u793a\u8bcd\u5b9a\u5236',
   personaLabel: 'Persona',
-  personaHint: '\u5b9a\u4e49 Agent \u7684\u8eab\u4efd\u4e0e\u89d2\u8272，\u652f\u6301 {{model}} \u548c {{cwd}}。',
+  personaHint: '定义 Agent 的身份与角色，支持 {{model}} 和 {{provider}}。',
   sourcePromptLabel: 'DSH Core \u6e90\u7801\u8bf4\u660e',
   sourcePromptHint: '\u8bf4\u660e DSH \u6e90\u7801\u68c0\u51fa\u76ee\u5f55\u4e0e\u5de5\u4f5c\u76ee\u5f55，\u652f\u6301 {{sourceRoot}}。',
   webPromptLabel: 'DSH Core Web \u8bf4\u660e',
@@ -320,53 +302,6 @@ export function PromptSettingsCard(
       </details>
     </div>}
   </li>
-}
-
-/** The legacy composer seat is a compact inline row, not a menu panel. */
-export function FastModeFallback(
-  props: Pick<PropsRuntime<'conversation.input.right'>, 'sessionId' | 'useSessions'>
-    & InjectFace<InputSettingsControlInjected>
-    & PropsLocale<'codex'>,
-) {
-  const { useSettings, setSetting, t } = props
-  const snapshot = useSettings(state => state as { value?: CodexSettings; writable: boolean })
-  const visible = snapshot.value?.fastModeControlEnabled ?? true
-  const fast = snapshot.value?.fast ?? false
-  if (!visible) return null
-  return (
-    <button
-      type="button"
-      role="switch"
-      disabled={snapshot.writable === false}
-      aria-checked={fast}
-      aria-label={fast ? t('fastOn') : t('fastOff')}
-      title={fast ? t('fastOn') : t('fastOff')}
-      onClick={() => { void setSetting('fast', !fast) }}
-      style={{
-        boxSizing: 'border-box',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        height: 28,
-        border: 0,
-        borderRadius: 7,
-        padding: '0 6px',
-        color: fast ? 'var(--dsw-static-blue-500)' : 'var(--dsw-alias-label-secondary)',
-        background: fast ? 'var(--dsw-alias-interactive-bg-selected)' : 'transparent',
-        cursor: snapshot.writable === false ? 'default' : 'pointer',
-        font: 'inherit',
-        fontSize: 12,
-        lineHeight: '20px',
-        fontWeight: fast ? 600 : 400,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <span>{t('fast')}</span>
-      <span style={{ color: 'var(--dsw-alias-label-tertiary)', fontSize: 11 }}>
-        {fast ? t('fastStateOn') : t('fastStateOff')}
-      </span>
-    </button>
-  )
 }
 
 type LegacyOverlayProps = PropsRuntime<typeof LEGACY_OVERLAY_SLOT>
@@ -634,13 +569,20 @@ function elapsedSeconds(startedAt: number, now: number): number {
   return Math.max(0, Math.floor((now - startedAt) / 1_000))
 }
 
-/** Show the persisted last request, separately from controls for the next one. */
-export function RequestReasoningControl(props: Pick<PropsRuntime<'conversation.input.right'>, 'useProjection'> & InjectFace<InputSettingsControlInjected> & PropsLocale<'codex'>) {
+/** Persisted model used by the last request, displayed below the composer. */
+export function RequestModelInfo(props: Pick<PropsRuntime<'conversation.composer.dock'>, 'useProjection'> & PropsLocale<'codex'>) {
   const selection = (props.useProjection as unknown as (key: string) => CodexRequestSelection | undefined)('codexRequestSelection')
-  const notice = selection == null
-    ? props.t('requestSelectionPending')
-    : `${props.t('requestSelection')}: ${selection.provider}/${selection.model} · ${selection.effort ?? props.t('providerDefault')}. ${props.t('requestSelectionPending')}`
-  return <ReasoningDropdown useSettings={props.useSettings as never} setSetting={props.setSetting} t={props.t} capabilityNotice={notice} />
+  if (selection == null) return null
+  return <div data-codex-request-model style={{
+    color: 'var(--dsw-alias-label-tertiary)', fontSize: 11, lineHeight: '18px',
+    padding: '4px 0', overflowWrap: 'anywhere',
+  }}>
+    {props.t('requestSelection')}: {selection.provider}/{selection.model}
+  </div>
+}
+
+export function RequestReasoningControl(props: InjectFace<InputSettingsControlInjected> & PropsLocale<'codex'>) {
+  return <ReasoningDropdown useSettings={props.useSettings as never} setSetting={props.setSetting} t={props.t} />
 }
 
 /** Prefer the session snapshot when an older projection host only exposes null. */
@@ -996,6 +938,12 @@ export function apply(ctx: Context): void {
     locale: NS,
     inject: injected,
   }, RequestReasoningControl))
+  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+    name: 'conversation.composer.dock',
+    id: 'codex-request-model',
+    order: 0,
+    locale: NS,
+  }, RequestModelInfo))
   ctx.slots.inject(FAST_FALLBACK_SLOT, () => ctx.slots.register({
     name: FAST_FALLBACK_SLOT,
     id: 'codex-context-size-fallback',

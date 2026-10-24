@@ -5,7 +5,7 @@
 ## 安装与更新
 
 ```sh
-dsh plugin --profile desktop add 'git+ssh://git@github.com/RoyalLiang/dsh-codex-harness.git#v0.2.23' --ignore-scripts
+dsh plugin --profile desktop add 'git+ssh://git@github.com/RoyalLiang/dsh-codex-harness.git#v0.2.24' --ignore-scripts
 ```
 
 Web Profile 使用 `--profile web`。安装机需要可用的 GitHub SSH 授权。版本固定到已发布标签；更新时先查看变更说明，再将标签替换为新版本。不要使用 npm 上的 `@latest` 更新本独立版本，也不要依赖本地 `.tgz` 文件。
@@ -23,11 +23,12 @@ Web Profile 使用 `--profile web`。安装机需要可用的 GitHub SSH 授权�
 
 `prepare` 安装钩子已移除，避免 Git 安装再次拉取开发依赖或在用户机器上编译。打包检查命令 `pnpm pack:check` 会先执行构建。
 
-## 当前工作区方案（未发布）
+## 0.2.24
 
-模型能力适配、选择 Default 时继承、max 合法映射、未知能力省略、动态内部验证指导、请求历史保护、宿主提示词顺序保留、补丁冲突和输入栏交互均已完成源码实现。设计与验收见 [落地设计与验收](codex-landing.zh.md)。这些工作区修改不自动进入现有 `v0.2.23` 标签。
-
-本轮当前源码自动检查已重跑通过：`pnpm test` 共 19 个测试文件、201 项全部通过，包含新增 8 项请求与压缩边界回归；`pnpm run check`、`pnpm run build` 均通过。测试最初受沙箱 `spawn EPERM` 限制，经批准以更宽权限重跑同一命令后通过；另有 `git diff --check` 通过记录。18 项补丁测试也已通过，UI 测试 harness 的 React 18 ref 读取修正已纳入完整重跑。实际 ASAR 的 44 个模块已完成静态契约核对，本轮当前源码另在 `dsh-desktop-next@2.0.19-next`（Electron 44.0.0 / Node 24.18.1）重跑 `scripts/verify-host-compat.mjs` 通过，退出码 0：真实 loader、registry、LLM、gateway、SettingsForms 与 SystemPrompt；Codex 四个核心工具注册、persona 保留、Codex 提示装配与 Default 动态指导断言均通过。配置编辑器、工具执行器与会话使用隔离 fixture，未安装或修改真实 Profile。发布前仍需保存同一提交的检查、构建、宿主兼容与隔离 Profile 联调证据；目前没有真实桌面安装、GUI、提供方/API 或性能验收结果。
+- 修复旧 Persona `{{cwd}}` 变量引起的启动失败，兼容预设编辑保存并保留 Persona 后缀。
+- Fast 使用独立滑动开关；精简推理菜单，将上次实际请求模型移至聊天框下方。
+- `pnpm test` 共 19 个测试文件、208 项通过，类型检查和构建通过。实际 `dsh-desktop-next@2.0.19-next`（Electron 44.0.0 / Node 24.18.1）宿主模块集成通过，覆盖 loader、registry、LLM、gateway、SettingsForms、SystemPrompt、旧变量、Persona 后缀以及 Fast/High/Default 请求设置。
+- Chromium 加载编译后的客户端产物，通过独立设置、重挂载后读取、保存失败重试、Escape 焦点恢复、只读和 390px 布局断言；宿主属性与设置传输使用隔离 fixture。本机自动导航与截图接口不可用，未完成实际使用 Profile 的完整 GUI、真实提供方或性能验收。
 
 ## 0.2.23
 

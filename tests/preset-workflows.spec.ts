@@ -8,6 +8,8 @@ import type { AgentPresetsForEditor } from '../src/preset-editor.ts'
 import { exportPromptCard, parsePromptCard } from '../src/preset-contract.ts'
 import { withPresetPrompt } from '../src/index.ts'
 import { CODEX_SETTINGS_ENTRY } from '../src/settings.ts'
+import { applyPromptSections } from '../src/prompt-sections.ts'
+import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 
 const generic = '# story instructions\n- id: persona\n  name: story-plugin\n  config:\n    prefix: Story teller\n    disabled: !!js process.platform === "win32"\n'
 const harness = `${generic}\n- id: custom-row-name\n  name: '@shuind/dsh-codex-harness'\n  config:\n    codexCore: true\n`
@@ -129,6 +131,27 @@ describe('preset product workflows', () => {
     expect(saved).toContain('Tool description')
     expect(parse(saved)[1].config[1].config.section).toBe('Planning policy')
     expect(supportsCodex(saved)).toBe(false)
+  })
+  it('saves Codex persona prefix overrides without duplicating the suffix', () => {
+    const source = `- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: Original {{model}}
+    suffix: Keep suffix
+- id: codex-tools
+  name: '@shuind/dsh-codex-harness'
+`
+    const saved = patchPromptSections(source, readPromptSections(source).map(section => ({
+      ...section, text: section.label === 'Persona' ? 'Edited {{model}}' : section.text,
+    })))
+    const rows = parse(saved)
+    expect(rows[1].config.presetSections.persona).toBe('Edited {{model}}')
+    expect(renderPrompt(applyPromptSections({
+      sections: [
+        { name: 'deployment:persona-prefix', text: rows[0].config.prefix },
+        { name: 'deployment:persona-suffix', text: rows[0].config.suffix },
+      ], contexts: [], tools: [], variables: { model: 'test-model' },
+    }, rows[1].config.presetSections))).toBe('Edited test-model\n\nKeep suffix')
   })
   it('copies all Codex prompt sections independently and does not change the original', async () => {
     const { service } = await fixture()
