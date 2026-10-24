@@ -29,10 +29,12 @@ function mount(
 ): {
   definitions: ToolDefinition[]
   promptSections: string[]
+  injections: string[][]
   listeners: Map<string, Array<(...args: any[]) => unknown>>
 } {
   const definitions: ToolDefinition[] = []
   const promptSections: string[] = []
+  const injections: string[][] = []
   const listeners = new Map<string, Array<(...args: any[]) => unknown>>()
   const ctx = {
     tools: { register: (definition: ToolDefinition) => { definitions.push(definition) } },
@@ -45,11 +47,11 @@ function mount(
       listeners.set(event, entries)
       return () => {}
     },
-    inject: () => {},
+    inject: (services: string[]) => { injections.push(services) },
     logger: { warn: () => {} },
   } as unknown as Context
   apply(ctx, config)
-  return { definitions, promptSections, listeners }
+  return { definitions, promptSections, injections, listeners }
 }
 
 describe('Codex tool catalog', () => {
@@ -1139,8 +1141,10 @@ describe('Codex tool catalog', () => {
     const global = mount(undefined, { globalEnhancements: true, codexCore: false })
     expect(global.definitions).toEqual([])
     expect(global.promptSections).toEqual([])
+    expect(global.injections).toContainEqual(['agentPresets'])
 
     const codex = mount(undefined, { globalEnhancements: false, codexCore: true })
+    expect(codex.injections).not.toContainEqual(['agentPresets'])
     expect(codex.definitions.map(tool => tool.name)).toEqual([
       'exec_command',
       'write_stdin',

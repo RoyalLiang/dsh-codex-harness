@@ -809,7 +809,6 @@ export function withPresetPrompt(settings: CodexSettings, presetPrompt: string |
 
 /** Mount the Codex prompt/tool layer inside one fixed agent preset. */
 export function apply(ctx: Context, config: Config = {}): void {
-  installPresetEditor(ctx)
   const resolved = {
     globalEnhancements: config.globalEnhancements ?? true,
     codexCore: config.codexCore ?? true,
@@ -851,6 +850,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const execConfig = { ...resolved, currentSettings: codexSettings.current }
 
   if (resolved.globalEnhancements) {
+    installPresetEditor(ctx)
     // The generic pi-ai plugin remains the owner of provider routes. This
     // layer adds only request metadata and remote-first transport behavior.
 
