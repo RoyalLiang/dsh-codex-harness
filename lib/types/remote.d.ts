@@ -15,6 +15,7 @@ interface CodexRequestWireOptions {
     /** Whether apply_patch should use the Responses custom grammar tool. */
     customApplyPatch?: boolean;
 }
+export declare function isGptModel(model: unknown): model is string;
 /** Replace DSH's JSON function declaration with the Responses custom grammar tool. */
 export declare function addCodexApplyPatch(body: JsonObject): JsonObject;
 /** Replay apply_patch calls as custom tool items after pi-ai's generic conversion. */

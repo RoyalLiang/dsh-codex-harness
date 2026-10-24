@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-llm'
-import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -29,6 +29,7 @@ import {
   repairLegacyPiAiContextOverflow,
 } from './remote.ts'
 import { registerCodexActivityProjection } from './activity.ts'
+import { registerCodexRequestProjection } from './request-selection.ts'
 import {
   DEFAULT_CODEX_PERSONA,
   DEFAULT_CODEX_SYSTEM_PROMPT,
@@ -40,11 +41,15 @@ import {
   CODEX_SETTINGS_ENTRY, CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA,
 } from './settings.ts'
 import type { CodexSettings } from './settings.ts'
-import { readSettings, settingsDescriptor, settingsNamespaceMatches } from './settings-compat.ts'
+import { readSettings, settingsNamespaceMatches } from './settings-compat.ts'
 import type { CompatibleSettings } from './settings-compat.ts'
 import { codexCompactionMode } from './compaction.ts'
 import { CodexPresetEditor } from './preset-editor.ts'
 import { applyPromptSections, Config as PromptSectionsConfig } from './prompt-sections.ts'
+import { ModelGateway } from './domain/model/gateway.ts'
+import { ReasoningMachine } from './domain/reasoning/machine.ts'
+
+import { PrefixCacheTopology } from './domain/context/topology.ts'
 
 export {
   DEFAULT_CODEX_PERSONA,
@@ -53,6 +58,10 @@ export {
   DEFAULT_DSH_CORE_WEB_PROMPT,
 } from './prompt.ts'
 export { CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA } from './settings.ts'
+export { ModelGateway } from './domain/model/gateway.ts'
+export { ReasoningMachine } from './domain/reasoning/machine.ts'
+export { EphemeralThoughtPruner } from './domain/reasoning/pruner.ts'
+export { PrefixCacheTopology } from './domain/context/topology.ts'
 export type { CodexSettings } from './settings.ts'
 
 export const name = 'codex'
@@ -139,32 +148,10 @@ export const Config: z<Config> = z.object({
   webSurfacePrompt: z.string().default(DEFAULT_DSH_CORE_WEB_PROMPT),
 })
 
-const LLM_PI_AI_SETTINGS = 'llm-pi-ai' as const
-
-/** Codex request envelope with the plugin's provider-facing service-tier field. */
+/** Codex request envelope with the compatible context override. */
 export interface CodexRequestConfig extends LlmCallConfig {
-  /** Codex request context capacity override, retained for older DSH hosts. */
   contextWindow?: number
-  /** Provider-facing service tier, for example Responses `priority`. */
   serviceTier?: string
-}
-
-const GPT_REASONING_EFFORTS = {
-  low: 'low',
-  medium: 'medium',
-  high: 'high',
-  xhigh: 'xhigh',
-  max: 'max',
-} as const
-
-type CodexReasoningEfforts = false | Record<string, string | null>
-
-function codexReasoningEfforts(configured: CodexReasoningEfforts | undefined): CodexReasoningEfforts {
-  if (configured === false) return false
-  const filtered = configured === undefined
-    ? {}
-    : Object.fromEntries(Object.entries(configured).filter(([level]) => level !== 'off' && level !== 'minimal'))
-  return Object.keys(filtered).length === 0 ? GPT_REASONING_EFFORTS : filtered
 }
 
 export interface CodexModelProfile {
@@ -174,99 +161,10 @@ export interface CodexModelProfile {
   [key: string]: unknown
 }
 
-interface CodexModelOverride {
-  input?: string[]
-  reasoningEfforts?: false | Record<string, string | null>
-  [key: string]: unknown
-}
-
-interface CodexProviderProfile {
-  models?: CodexModelProfile[]
-  modelOverrides?: Record<string, CodexModelOverride>
-  [key: string]: unknown
-}
-
-/** GPT model ids are the only models whose relay capabilities Codex fills in. */
-function isGptModel(id: string): boolean {
-  return /(?:^|\/)(?:gpt|chatgpt)(?:[-_.]|\d|$)/i.test(id)
-}
-
-/** Add Codex defaults without overwriting explicit user capabilities. */
+/** Compatibility export: provider capabilities remain owned by the adapter. */
 export function enrichCodexModel(model: CodexModelProfile): CodexModelProfile {
-  if (!isGptModel(model.id)) return model
-  const input = model.input === undefined || model.input.length === 0
-    ? ['text', 'image']
-    : model.input
-  const efforts = codexReasoningEfforts(model.reasoningEfforts)
-  if (input === model.input && efforts === model.reasoningEfforts) return model
-  return { ...model, input, reasoningEfforts: efforts }
+  return model
 }
-
-/** The settings schema keys modelOverrides by id, so its values must not carry an id field. */
-function enrichCodexOverride(id: string, model: CodexModelOverride): CodexModelOverride {
-  if (!isGptModel(id)) return model
-  const enriched = enrichCodexModel({ ...model, id })
-  const { id: _id, ...withoutId } = enriched
-  const inputMissing = model.input === undefined || model.input.length === 0
-  const nextEfforts = codexReasoningEfforts(model.reasoningEfforts)
-  const reasoningChanged = JSON.stringify(nextEfforts) !== JSON.stringify(model.reasoningEfforts)
-  if (!inputMissing && !reasoningChanged) return model
-  return { ...withoutId, reasoningEfforts: nextEfforts }
-}
-
-interface LlmPiAiSettings {
-  providers?: Record<string, CodexProviderProfile>
-}
-
-/** Persist only missing GPT capabilities into the user's existing pi-ai model config. */
-async function enrichConfiguredGptModels(ctx: Context): Promise<void> {
-  const settings = ctx.get('settings') as CompatibleSettings | undefined
-  if (typeof settings?.update !== 'function') return
-  const descriptor = settingsDescriptor(settings, LLM_PI_AI_SETTINGS)
-  const current = descriptor?.value as LlmPiAiSettings | undefined
-  if (current?.providers === undefined) return
-  const providers: Record<string, Record<string, unknown>> = {}
-  let changed = false
-  for (const [provider, profile] of Object.entries(current.providers)) {
-    const models = profile.models
-    const overrides = profile.modelOverrides
-    const nextModels = Array.isArray(models) ? models.map(enrichCodexModel) : undefined
-    const nextOverrides = overrides === undefined
-      ? undefined
-      : Object.fromEntries(Object.entries(overrides).map(([id, model]) => [id, enrichCodexOverride(id, model)]))
-    const modelsChanged = nextModels !== undefined && nextModels.some((model, index) => model !== models?.[index])
-    const overridesChanged = nextOverrides !== undefined
-      && overrides !== undefined
-      && Object.entries(nextOverrides).some(([id, model]) => model !== overrides[id])
-    if (modelsChanged || overridesChanged) {
-      changed = true
-      providers[provider] = {
-        ...modelsChanged ? { models: nextModels } : {},
-        ...overridesChanged ? { modelOverrides: nextOverrides } : {},
-      }
-    }
-  }
-  if (changed && descriptor !== undefined) {
-    if (descriptor.revision === undefined) await settings.update(descriptor.ns, { providers })
-    else await settings.update(descriptor.ns, { providers }, descriptor.revision)
-  }
-}
-
-/** Keep newly edited GPT model entries enriched while Codex mode is mounted. */
-function watchConfiguredGptModels(ctx: Context): void {
-  let tail = Promise.resolve()
-  const schedule = (): void => {
-    tail = tail.then(() => enrichConfiguredGptModels(ctx)).catch(error => {
-      ctx.logger.warn('codex: could not enrich configured GPT model capabilities')
-      ctx.logger.warn(error)
-    })
-  }
-  ctx.on('settings/document-updated', (ns) => {
-    if (ns === LLM_PI_AI_SETTINGS) schedule()
-  })
-  schedule()
-}
-
 /** Install the optional settings source used by requests and prompt assembly. */
 function installCodexSettings(
   ctx: Context,
@@ -379,8 +277,7 @@ export function syncCodexContextWindow(session: Session, contextWindow: number |
     model?: unknown
   } | undefined
   if (typeof config?.provider !== 'string'
-    || typeof config.model !== 'string'
-    || !isGptModel(config.model)) return
+    || typeof config.model !== 'string') return
   const current = session.requestContext()
   if (current?.provider === config.provider
     && current.model === config.model
@@ -435,22 +332,53 @@ function installCodexContextProjection(ctx: Context, current: () => CodexSetting
   syncAll()
 }
 
-/** Apply the live Codex controls to one agent request without leaking them to other routes. */
+/** Apply standard call settings without changing provider-owned history or capabilities. */
 export function applyCodexRequestSettings(
   request: CodexRequestConfig,
-  settings: CodexSettings,
+  settings: Partial<CodexSettings>,
+  metadata?: LlmResolvedModelInfo,
 ): CodexRequestConfig {
-  const {
-    contextWindow: _inheritedContextWindow,
-    serviceTier: _inheritedServiceTier,
-    ...withoutCodexControls
-  } = request
-  if (!isGptModel(request.model)) return withoutCodexControls
+  const { contextWindow: _contextWindow, serviceTier: _serviceTier, reasoningEffort, ...rest } = request
+  const inherited = settings.reasoningEffort === undefined || settings.reasoningEffort === 'default'
+  const parameters = settings.universalCodexMode === false
+    ? (reasoningEffort === undefined ? {} : { reasoningEffort })
+    : ReasoningMachine.mapEffortToParameters(settings.reasoningEffort, false, ModelGateway.resolve(metadata), inherited ? reasoningEffort : undefined)
   return {
-    ...withoutCodexControls,
-    ...settings.contextWindow === undefined ? {} : { contextWindow: settings.contextWindow },
-    ...settings.fast ? { serviceTier: 'priority' } : {},
+    ...rest,
+    ...parameters,
+    ...(settings.contextWindow === undefined ? {} : { contextWindow: settings.contextWindow }),
   }
+}
+
+/** Resolve exact-route capabilities; a failed lookup never invents native support. */
+export async function resolveCodexRequest(
+  ctx: Context,
+  request: CodexRequestConfig,
+  settings: Partial<CodexSettings>,
+  signal?: AbortSignal,
+): Promise<CodexRequestConfig> {
+  signal?.throwIfAborted()
+  let metadata: LlmResolvedModelInfo | undefined
+  try {
+    metadata = await ctx.llm.resolveModelInfo(request.provider, request.model, signal)
+  } catch (error) {
+    signal?.throwIfAborted()
+    if (error instanceof Error && error.name === 'AbortError') throw error
+  }
+  signal?.throwIfAborted()
+  return applyCodexRequestSettings(request, settings, metadata)
+}
+
+/** Read explicit route API configuration; provider and model names imply nothing. */
+export function codexProviderApi(ctx: Context, provider: string, model?: string): string | undefined {
+  const settings = readSettings<{ providers?: Record<string, {
+    api?: string
+    models?: { id: string; api?: string }[]
+    modelOverrides?: Record<string, { api?: string }>
+  }> }>(ctx.get('settings'), 'llm-pi-ai')
+  const profile = settings?.providers?.[provider]
+  return (model === undefined ? undefined : profile?.modelOverrides?.[model]?.api
+    ?? profile?.models?.find(entry => entry.id === model)?.api) ?? profile?.api
 }
 
 /** Put the agent persona first and omit the generic Harness identity opener. */
@@ -925,12 +853,13 @@ export function apply(ctx: Context, config: Config = {}): void {
   if (resolved.globalEnhancements) {
     // The generic pi-ai plugin remains the owner of provider routes. This
     // layer adds only request metadata and remote-first transport behavior.
-    watchConfiguredGptModels(ctx)
+
     registerCodexActivityProjection(ctx)
+    registerCodexRequestProjection(ctx)
     installCodexContextProjection(ctx, codexSettings.current)
-    ctx.on('agent/request', async (_payload, next) => {
+    ctx.on('agent/request', async (payload, next) => {
       const request = await next()
-      return applyCodexRequestSettings(request, codexSettings.current())
+      return resolveCodexRequest(ctx, request, codexSettings.current(), payload.signal)
     })
     if (typeof (ctx as unknown as { effect?: unknown }).effect === 'function') {
       const disposeHostedWebSearch = installHostedWebSearch()
@@ -938,6 +867,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     ctx.on('llm/stream', ((options: any, next: any) => {
       const settings = codexSettings.current()
+      const responses = ModelGateway.resolve(undefined, codexProviderApi(ctx, options.provider, options.model)).supportsResponses
       const contextWindow = options.contextWindow ?? settings.contextWindow
       const compactionMode = codexCompactionMode()
       const legacySafeNext = () => repairLegacyPiAiContextOverflow(
@@ -945,7 +875,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         options.model,
         contextWindow,
       )
-      if (options.purpose === 'compaction' && isGptModel(options.model)) {
+      if (options.purpose === 'compaction' && responses) {
         const useRemoteCompaction = compactionMode === 'remote'
           || (compactionMode !== 'local' && resolved.remoteCompact && settings.remoteCompactionEnabled)
         if (useRemoteCompaction) {
@@ -956,10 +886,10 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         return legacySafeNext()
       }
-      if (options.purpose === undefined && isGptModel(options.model)) {
+      if (options.purpose === undefined && responses) {
         return repairLegacyPiAiContextOverflow(
           hostedWebSearchStream(next, {
-            serviceTier: options.serviceTier,
+            ...(settings.fast ? { serviceTier: 'priority' } : {}),
             hostedWebSearch: resolved.hostedWebSearch && settings.hostedWebSearchEnabled,
             customApplyPatch: settings.patchToolEnabled,
           }),
@@ -972,14 +902,23 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
 
   if (resolved.codexCore) {
-    ctx.on('system-prompt/assemble', async (_assembly, _context, next) =>
-      applyPromptSections(applyCodexCapabilitySettings(await next(), codexSettings.current()), config.presetSections ?? {}))
+    ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
+      const assembled = await next()
+      const capabilityApplied = applyCodexCapabilitySettings(assembled, codexSettings.current())
+      const sectionsApplied = applyPromptSections(capabilityApplied, config.presetSections ?? {})
+      return PrefixCacheTopology.optimizeAssembly(sectionsApplied)
+    })
     ctx.systemPrompt.section({
       name: 'codex:base',
       order: 10,
       text: () => codexSettings.current().promptEnabled
         ? resolveCodexSystemPrompt(codexSettings.current().systemPrompt)
         : '',
+    })
+    ctx.systemPrompt.context?.({
+      name: 'codex:reasoning',
+      order: 100,
+      text: () => ReasoningMachine.cotPromptGuidance(codexSettings.current().reasoningEffort),
     })
     registerExecTools(ctx, execConfig)
     registerPatchTool(ctx, codexSettings.current)

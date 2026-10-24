@@ -193,6 +193,7 @@ function findSequence(
     (actual, wanted) => actual.trim() === wanted.trim(),
   ]
   for (const matchesLine of matchers) {
+    let match = -1
     for (let index = first; index <= last; index++) {
       let matches = true
       for (let offset = 0; offset < expected.length; offset++) {
@@ -201,8 +202,12 @@ function findSequence(
           break
         }
       }
-      if (matches) return index
+      if (matches) {
+        if (match !== -1) invalid('ambiguous hunk: expected lines match multiple locations; add more context')
+        match = index
+      }
     }
+    if (match !== -1) return match
   }
   return -1
 }

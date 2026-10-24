@@ -1,14 +1,16 @@
 # Codex Harness for DSH — RoyalLiang
 
-为 DSH 提供可自定义提示词与 Codex 工具的编码模式。
+聚焦将 DSH 默认 agent 的工作方式优化为 Codex 模式：从任务理解、工具执行到结果验证，统一行为提示，并按模型能力适配推理强度、Fast 请求与上下文压缩。当前包仍通过 Agent 预设启用，不会自动替换宿主默认 agent。
 
 本仓库由 [RoyalLiang](https://github.com/RoyalLiang/dsh-codex-harness) 独立维护，基于 [shuind/dsh-codex-harness](https://github.com/shuind/dsh-codex-harness) 的 MIT 版本演进。保留 `@shuind/dsh-codex-harness` 包标识以兼容已有设置；独立版本通过本仓库的 Git 标签安装，未发布到原作者的 npm 包。
 
 支持直接编辑 DSH 预设、加入 Codex 能力及另存副本，详见 [预设编辑说明](docs/preset-library.md)。维护和发布步骤见 [独立维护说明](docs/maintenance.md)。
 
+当前工作区的行业实现对比、能力边界、落地设计与逐项验收见 [Codex 落地设计与验收](docs/codex-landing.zh.md)。该文档明确区分源码实现、宿主兼容、真实模型联调与发布状态；下方固定标签安装不会自动包含尚未发布的工作区修改。
+
 ## 功能
 
-- 使用精简codex提示词；对gpt过度拉屎做了少量提示词约束。
+- 使用精简的 Codex 行为提示，按任务需要执行、验证并持续汇报。
 - 在 **设置 → 插件 → 插件配置 → Codex Harness** 中查看、编辑或恢复完整提示词。
 - 在 **设置 → 插件 → 插件配置 → Codex Harness** 中展开 **预设编辑**：Codex 模式和其它预设处于同一级，打开时默认选中 Codex。用户预设可直接编辑；DSH 内置预设只读，先创建可编辑副本。
 - 提供 `exec_command`、`write_stdin`、`apply_patch` 和 `update_plan`。
@@ -60,10 +62,13 @@ apiKeyEnv: OPENAI_API_KEY
 
 用户预设可以直接保存。DSH 内置预设不能修改，点击 **创建可编辑副本** 后再保存；副本会自动加入同一个选择器，也会保留源预设的工具、插件和其它配置。普通预设还可以在编辑时加入 Codex 能力。活动状态属于全局显示设置，远程上下文压缩、托管网络搜索、终端、补丁、计划和 Codex 提示词属于 Codex 模式能力，并可随预设保存。
 
-### Fast 与上下文
+### Fast、思考强度与上下文
 
-- **Fast**：在 Codex 模式的模型菜单中开启，向 Responses 请求发送 `service_tier: "priority"`。
+- **思考强度**：Default 继承当前请求或提供方设置；Low / Medium / High / XHigh / Max 使用宿主模型能力映射合法 `reasoningEffort`，Max 不保证发送字面值 `max`。未知能力不强制原生参数；简短内部验证指导与原生预算分开，不要求公开思考链。
+- **Fast**：在 Codex 模式的模型菜单中开启，向支持的 Responses 请求发送 `service_tier: "priority"`，与思考强度分别控制；提供方可用性和实际延迟需验证。
 - **上下文容量**：点击输入栏旁的上下文用量指示器，可设置 `1K`–`1000K` tokens；下一次请求和自动压缩使用该值。
+
+当前工作区保留完整请求历史、宿主 persona 和提示词原始顺序。已有类型检查、构建和完整回归记录（19 个测试文件、201 项，含新增 8 项请求与压缩边界回归）；真实宿主安装、GUI、提供方请求和性能仍待验收，详见[验收记录](docs/codex-landing.zh.md)，不能将工作区实现视为已部署。
 
 ## License
 

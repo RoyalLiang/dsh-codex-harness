@@ -3,4 +3,5 @@ lib/**/*.map
 lib/**/*.tsbuildinfo
 *.tgz
 .npmrc
+.audit/
 

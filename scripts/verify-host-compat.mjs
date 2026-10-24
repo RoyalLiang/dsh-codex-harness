@@ -11,10 +11,10 @@ assert(asar, 'Set DSH_HOST_ASAR to the installed app.asar path')
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const hostRequire = createRequire(pathToFileURL(resolve(asar, 'package.json')))
 const host = name => import(pathToFileURL(hostRequire.resolve(name)).href)
-const [{ Context }, { TypertRegistry }, loader, { TypertGatewayService }, { LlmRuntime }, { SettingsForms }] = await Promise.all([
+const [{ Context }, { TypertRegistry }, loader, { TypertGatewayService }, { LlmRuntime }, { SettingsForms }, { SystemPrompt }] = await Promise.all([
   host('@deepseek-ai/cordis'), host('@deepseek-ai/dsh-typert-registry'),
   host('@deepseek-ai/dsh-typert-loader'), host('@deepseek-ai/dsh-api-gateway'), host('@deepseek-ai/dsh-llm'),
-  host('@deepseek-ai/dsh-settings'),
+  host('@deepseek-ai/dsh-settings'), host('@deepseek-ai/dsh-system-prompt'),
 ])
 const PACKAGE = '@shuind/dsh-codex-harness'
 const { TYPERT } = await import(pathToFileURL(resolve(repo, 'lib/typert.js')).href)
@@ -52,7 +52,9 @@ ctx.provide('agentPresets', {
   register: async definition => { registeredPreset = definition; return () => {} },
   list: async () => registeredPreset ? [{ ...registeredPreset, trust: 'system' }] : [],
 })
-for (const service of ['tools', 'systemPrompt', 'shell', 'fs', 'credentials']) ctx.provide(service, {})
+const tools = []
+ctx.provide('tools', { register: definition => { tools.push(definition); return () => {} } })
+for (const service of ['shell', 'fs', 'credentials']) ctx.provide(service, {})
 ctx.provide('pluginPackages', {
   packageOf(name) {
     const manifestPath = name === PACKAGE ? resolve(repo, 'package.json') : hostRequire.resolve(`${name}/package.json`)
@@ -64,6 +66,7 @@ try {
   await ctx.plugin(TypertRegistry).await()
   await ctx.plugin(LlmRuntime).await()
   await ctx.plugin(SettingsForms).await()
+  await ctx.plugin(SystemPrompt, { personaPrefix: 'HOST PREFIX', personaSuffix: 'HOST SUFFIX' }).await()
   const installer = await import(pathToFileURL(resolve(repo, 'lib/installer.js')).href)
   const installerFiber = ctx.plugin(installer, {})
   entries.push({ id: 'codex-preset-installer', options: { id: 'codex-preset-installer', name: `${PACKAGE}/installer`, config: {} }, fiber: installerFiber })
@@ -76,7 +79,8 @@ try {
   await ctx.settings.update(descriptor.ns, { fast: true }, descriptor.revision)
   assert.equal(ctx.settings.describe().find(row => row.ns === descriptor.ns).value.fast, true)
   const codex = await import(pathToFileURL(resolve(repo, 'lib/index.js')).href)
-  await ctx.plugin(codex, { globalEnhancements: true, codexCore: false }).await()
+  await ctx.plugin(codex, { globalEnhancements: true, codexCore: true }).await()
+  for (const name of ['exec_command', 'write_stdin', 'apply_patch', 'update_plan']) assert(tools.some(tool => tool.name === name))
   await ctx.plugin(TypertGatewayService, { websocketHeartbeatIntervalMs: 30_000, streamInboxBytes: 1_048_576 }).await()
   const start = () => ctx.plugin(loader, { packages: ['@deepseek-ai/dsh-llm', PACKAGE] })
   let activation = start()
@@ -100,7 +104,18 @@ try {
     peer: { principal: { kind: 'owner' }, signal: new AbortController().signal },
   })
   assert(catalog.presets.some(preset => preset.id === 'codex-collaboration'))
-  console.log('PASS: actual host loader + registry + LLM + gateway + SettingsForms; plugin startup, Config edits, strict validation, dispose and reactivate')
+  const assembled = () => ctx.systemPrompt.assemble()
+  const prompt = await assembled()
+  assert(prompt.sections.some(section => section.name === 'codex:base' && section.text.length > 0))
+  assert(prompt.sections.some(section => section.text === 'HOST PREFIX'))
+  assert(prompt.sections.some(section => section.text === 'HOST SUFFIX'))
+  assert(prompt.contexts.find(context => context.name === 'codex:reasoning').text.length > 0)
+  const live = ctx.settings.describe().find(row => row.ns === descriptor.ns)
+  await ctx.settings.update(live.ns, { reasoningEffort: 'default' }, live.revision)
+  assert.equal((await assembled()).contexts.find(context => context.name === 'codex:reasoning').text, '')
+  const hostManifest = JSON.parse(readFileSync(resolve(asar, 'package.json'), 'utf8'))
+  console.log(`Host: ${hostManifest.name}@${hostManifest.version}; Node ${process.versions.node}; Electron ${process.versions.electron}`)
+  console.log('PASS: actual host loader + registry + LLM + gateway + SettingsForms; Codex core tools and prompt, persona preservation, Default reasoning guidance, Config edits, strict validation, dispose and reactivate')
 } finally {
   await ctx.fiber.dispose()
   rmSync(temporaryHome, { recursive: true, force: true })

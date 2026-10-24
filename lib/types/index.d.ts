@@ -1,12 +1,16 @@
 /** Codex-compatible prompt overlay and core tools for a dsh agent preset. */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import type { LlmCallConfig } from '@deepseek-ai/dsh-llm';
+import type { LlmCallConfig, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm';
 import type { Session } from '@deepseek-ai/dsh-session';
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt';
 import type { CodexSettings } from './settings.ts';
 export { DEFAULT_CODEX_PERSONA, DEFAULT_CODEX_SYSTEM_PROMPT, DEFAULT_DSH_CORE_SOURCE_PROMPT, DEFAULT_DSH_CORE_WEB_PROMPT, } from './prompt.ts';
 export { CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA } from './settings.ts';
+export { ModelGateway } from './domain/model/gateway.ts';
+export { ReasoningMachine } from './domain/reasoning/machine.ts';
+export { EphemeralThoughtPruner } from './domain/reasoning/pruner.ts';
+export { PrefixCacheTopology } from './domain/context/topology.ts';
 export type { CodexSettings } from './settings.ts';
 export declare const name = "codex";
 export declare const inject: string[];
@@ -49,11 +53,9 @@ export interface Config {
 }
 /** Runtime configuration schema for the Codex tool bridge. */
 export declare const Config: z<Config>;
-/** Codex request envelope with the plugin's provider-facing service-tier field. */
+/** Codex request envelope with the compatible context override. */
 export interface CodexRequestConfig extends LlmCallConfig {
-    /** Codex request context capacity override, retained for older DSH hosts. */
     contextWindow?: number;
-    /** Provider-facing service tier, for example Responses `priority`. */
     serviceTier?: string;
 }
 export interface CodexModelProfile {
@@ -62,7 +64,7 @@ export interface CodexModelProfile {
     reasoningEfforts?: false | Record<string, string | null>;
     [key: string]: unknown;
 }
-/** Add Codex defaults without overwriting explicit user capabilities. */
+/** Compatibility export: provider capabilities remain owned by the adapter. */
 export declare function enrichCodexModel(model: CodexModelProfile): CodexModelProfile;
 /**
  * Pair the live Codex capacity with the token-meter context projection.
@@ -73,8 +75,12 @@ export declare function enrichCodexModel(model: CodexModelProfile): CodexModelPr
  * on the same effective capacity.
  */
 export declare function syncCodexContextWindow(session: Session, contextWindow: number | undefined): void;
-/** Apply the live Codex controls to one agent request without leaking them to other routes. */
-export declare function applyCodexRequestSettings(request: CodexRequestConfig, settings: CodexSettings): CodexRequestConfig;
+/** Apply standard call settings without changing provider-owned history or capabilities. */
+export declare function applyCodexRequestSettings(request: CodexRequestConfig, settings: Partial<CodexSettings>, metadata?: LlmResolvedModelInfo): CodexRequestConfig;
+/** Resolve exact-route capabilities; a failed lookup never invents native support. */
+export declare function resolveCodexRequest(ctx: Context, request: CodexRequestConfig, settings: Partial<CodexSettings>, signal?: AbortSignal): Promise<CodexRequestConfig>;
+/** Read explicit route API configuration; provider and model names imply nothing. */
+export declare function codexProviderApi(ctx: Context, provider: string, model?: string): string | undefined;
 /** Put the agent persona first and omit the generic Harness identity opener. */
 export declare function normalizeCodexPromptAssembly(assembly: PromptAssembly): PromptAssembly;
 /** Remove disabled Codex capabilities from the next model-visible assembly. */

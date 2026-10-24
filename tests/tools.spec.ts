@@ -590,33 +590,59 @@ describe('Codex tool catalog', () => {
     })
   })
 
-  it('falls back to the untouched local request when hosted fetch throws', async () => {
+  it.each([
+    new TypeError('network unavailable'),
+    new DOMException('request aborted', 'AbortError'),
+  ])('propagates $name without retrying the request', async (failure) => {
     const originalFetch = globalThis.fetch
-    const requests: object[] = []
+    const controller = new AbortController()
     let calls = 0
-    globalThis.fetch = async (input, init) => {
+    globalThis.fetch = async () => {
       calls += 1
-      if (calls === 1) throw new TypeError('network unavailable')
-      const request = new Request(input, init)
-      requests.push(JSON.parse(await request.text()))
-      return Response.json({ ok: true })
+      if (failure.name === 'AbortError') {
+        controller.abort(failure)
+        return new Response('extensions unsupported', { status: 400 })
+      }
+      throw failure
     }
     const dispose = installHostedWebSearch()
     try {
-      await (async function* () {
-        yield* hostedWebSearchStream(async function* () {
-          await globalThis.fetch('https://relay.example/v1/responses', {
-            method: 'POST',
-            body: JSON.stringify({ model: 'gpt-5.4', tools: [{ type: 'function', name: 'web_search' }] }),
-          })
+      const stream = hostedWebSearchStream(async function* () {
+        await globalThis.fetch('https://relay.example/v1/responses', {
+          method: 'POST',
+          signal: controller.signal,
+          body: JSON.stringify({ model: 'gpt-5.4', tools: [{ type: 'function', name: 'web_search' }] }),
         })
-      })().next()
+      })
+      await expect(collectChunks(stream)).rejects.toBe(failure)
     } finally {
       dispose()
       globalThis.fetch = originalFetch
     }
-    expect(calls).toBe(2)
-    expect(requests).toEqual([{ model: 'gpt-5.4', tools: [{ type: 'function', name: 'web_search' }] }])
+    expect(calls).toBe(1)
+  })
+
+  it.each([401, 429])('returns HTTP %i without retrying enhancements', async (status) => {
+    const originalFetch = globalThis.fetch
+    const response = new Response('provider rejected request', { status })
+    let calls = 0
+    globalThis.fetch = async () => {
+      calls += 1
+      return response
+    }
+    const dispose = installHostedWebSearch()
+    try {
+      await collectChunks(hostedWebSearchStream(async function* () {
+        expect(await globalThis.fetch('https://relay.example/v1/responses', {
+          method: 'POST',
+          body: JSON.stringify({ model: 'gpt-5.4', tools: [{ type: 'function', name: 'web_search' }] }),
+        })).toBe(response)
+      }))
+    } finally {
+      dispose()
+      globalThis.fetch = originalFetch
+    }
+    expect(calls).toBe(1)
   })
 
   it('leaves GPT requests without Codex-managed tools untouched', async () => {
@@ -726,40 +752,64 @@ describe('Codex tool catalog', () => {
     }])
   })
 
-  it('falls back to the untouched apply_patch request when custom tools are rejected', async () => {
+  it.each([400, 404, 422])('retries HTTP %i with the original Request fields and unenhanced body', async (status) => {
     const originalFetch = globalThis.fetch
-    const requests: object[] = []
-    let calls = 0
+    const controller = new AbortController()
+    const body = JSON.stringify({
+      model: 'gpt-5.4',
+      tools: [
+        { type: 'function', name: 'web_search' },
+        { type: 'function', name: 'apply_patch', description: 'patch files', parameters: {} },
+      ],
+      input: [{ role: 'user', content: [{ type: 'input_text', text: '<codex-remote-compaction>opaque</codex-remote-compaction>' }] }],
+    }, null, 2)
+    const originalRequest = new Request('https://relay.example/v1/responses?trace=original', {
+      method: 'POST',
+      headers: { authorization: 'Bearer secret', 'content-type': 'application/json', 'content-length': String(body.length), 'x-trace': 'original' },
+      body,
+      signal: controller.signal,
+      credentials: 'include',
+      cache: 'no-store',
+      redirect: 'manual',
+      mode: 'cors',
+      referrer: 'https://client.example/chat',
+      referrerPolicy: 'origin',
+      integrity: 'sha256-test',
+      keepalive: true,
+    })
+    const requests: Request[] = []
+    const bodies: string[] = []
+    const response = Response.json({ ok: true })
     globalThis.fetch = async (input, init) => {
-      calls += 1
       const request = new Request(input, init)
-      const body = JSON.parse(await request.text())
-      if (calls === 1) return new Response('custom tools unsupported', { status: 400 })
-      requests.push(body)
-      return Response.json({ ok: true })
+      requests.push(request)
+      bodies.push(await request.text())
+      return requests.length === 1 ? new Response('extensions unsupported', { status }) : response
     }
     const dispose = installHostedWebSearch()
     try {
-      await (async function* () {
-        yield* hostedWebSearchStream(async function* () {
-          await globalThis.fetch('https://relay.example/v1/responses', {
-            method: 'POST',
-            body: JSON.stringify({
-              model: 'gpt-5.4',
-              tools: [{ type: 'function', name: 'apply_patch', description: 'patch files', parameters: {} }],
-            }),
-          })
-        })
-      })().next()
+      await collectChunks(hostedWebSearchStream(async function* () {
+        expect(await globalThis.fetch(originalRequest)).toBe(response)
+      }, { serviceTier: 'priority' }))
     } finally {
       dispose()
       globalThis.fetch = originalFetch
     }
-    expect(calls).toBe(2)
-    expect(requests).toEqual([{
-      model: 'gpt-5.4',
-      tools: [{ type: 'function', name: 'apply_patch', description: 'patch files', parameters: {} }],
-    }])
+    expect(requests).toHaveLength(2)
+    expect(JSON.parse(bodies[0]!)).toMatchObject({
+      service_tier: 'priority',
+      tools: expect.arrayContaining([{ type: 'web_search', external_web_access: true }, expect.objectContaining({ type: 'custom', name: 'apply_patch' })]),
+      input: [{ type: 'compaction', encrypted_content: 'opaque' }],
+    })
+    expect(bodies[1]).toBe(body)
+    const fallback = requests[1]!
+    for (const field of ['url', 'method', 'credentials', 'cache', 'redirect', 'mode', 'referrer', 'referrerPolicy', 'integrity', 'keepalive'] as const) {
+      expect(fallback[field], field).toBe(originalRequest[field])
+    }
+    expect([...fallback.headers]).toEqual([...originalRequest.headers])
+    expect(requests[0]!.headers.has('content-length')).toBe(false)
+    controller.abort()
+    expect(requests.every(request => request.signal.aborted)).toBe(true)
   })
 
   it('restores a compaction marker even when the request has no web_search tool', async () => {
@@ -1052,71 +1102,22 @@ describe('Codex tool catalog', () => {
     expect((await collectChunks(compaction)).at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
   })
 
-  it('adds image and reasoning defaults only to GPT models', () => {
-    expect(enrichCodexModel({ id: 'gpt-5.4' })).toMatchObject({
-      input: ['text', 'image'],
-      reasoningEfforts: {
-        low: 'low',
-        medium: 'medium',
-        high: 'high',
-        xhigh: 'xhigh',
-        max: 'max',
-      },
-    })
-    expect(enrichCodexModel({ id: 'qwen3' })).toEqual({ id: 'qwen3' })
-    expect(enrichCodexModel({
-      id: 'gpt-5.4',
-      input: ['text'],
-      reasoningEfforts: { off: null, minimal: 'minimal', low: 'low' },
-    })).toEqual({ id: 'gpt-5.4', input: ['text'], reasoningEfforts: { low: 'low' } })
-    expect(enrichCodexModel({ id: 'gpt-5.4', input: ['text'], reasoningEfforts: false }))
-      .toEqual({ id: 'gpt-5.4', input: ['text'], reasoningEfforts: false })
+  it('preserves explicit model capabilities without guessing from names', () => {
+    const model = Object.freeze({ id: 'gpt-5.4', input: ['text'], reasoningEfforts: { off: null, minimal: 'minimal', low: 'low' } })
+    expect(enrichCodexModel(model)).toBe(model)
+    const unknown = Object.freeze({ id: 'gpt-99' })
+    expect(enrichCodexModel(unknown)).toBe(unknown)
   })
 
-  it('writes missing GPT capabilities into the configured llm-pi-ai model profile', async () => {
+  it('never writes invented capabilities into user model configuration', async () => {
     const updates: object[] = []
-    const settings = {
-      get: () => ({
-        providers: {
-          relay: {
-            models: [{ id: 'gpt-5.4', input: [], reasoningEfforts: {} }, { id: 'qwen3' }],
-          },
-        },
-      }),
-      update: (_ns: unknown, patch: object) => { updates.push(patch); return Promise.resolve() },
-    }
-    mount(settings)
+    const profile = { providers: { relay: { models: [{ id: 'gpt-5.4' }], modelOverrides: { 'gpt-5.4': {} } } } }
+    mount({ get: () => profile, update: (_ns: unknown, patch: object) => { updates.push(patch); return Promise.resolve() } })
     await Promise.resolve()
-    expect(updates).toHaveLength(1)
-    expect(updates[0]).toMatchObject({
-      providers: {
-        relay: {
-          models: [{ id: 'gpt-5.4', input: ['text', 'image'] }, { id: 'qwen3' }],
-        },
-      },
-    })
+    expect(updates).toEqual([])
+    expect(profile.providers.relay.models).toEqual([{ id: 'gpt-5.4' }])
+    expect(profile.providers.relay.modelOverrides).toEqual({ 'gpt-5.4': {} })
   })
-
-  it('keeps modelOverrides keyed by id without inserting an invalid id field', async () => {
-    const updates: object[] = []
-    const settings = {
-      get: () => ({ providers: { relay: { modelOverrides: { 'gpt-5.4': {} } } } }),
-      update: (_ns: unknown, patch: object) => { updates.push(patch); return Promise.resolve() },
-    }
-    mount(settings)
-    await Promise.resolve()
-    expect(updates[0]).toMatchObject({
-      providers: {
-        relay: {
-          modelOverrides: {
-            'gpt-5.4': { input: ['text', 'image'], reasoningEfforts: { medium: 'medium' } },
-          },
-        },
-      },
-    })
-    expect(JSON.stringify(updates[0])).not.toContain('"id":"gpt-5.4"')
-  })
-
   it('registers only the four Codex core tools with exact descriptions', () => {
     const { definitions, promptSections } = mount()
     expect(definitions.map(definition => definition.name)).toEqual([

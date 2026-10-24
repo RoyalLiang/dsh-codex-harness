@@ -4,7 +4,7 @@ export declare const DEFAULT_CODEX_SYSTEM_PROMPT: string;
 export declare const DEFAULT_CODEX_PERSONA: string;
 /** Default DSH Core source-checkout guidance template. */
 export declare const DEFAULT_DSH_CORE_SOURCE_PROMPT: string;
-/** Default DSH Web runtime guidance template. */
+/** Default DSH Core Web runtime guidance template. */
 export declare const DEFAULT_DSH_CORE_WEB_PROMPT: string;
 /** Resolve the full plugin-owned prompt, preserving intentional empty overrides. */
 export declare function resolveCodexSystemPrompt(systemPrompt?: string): string;

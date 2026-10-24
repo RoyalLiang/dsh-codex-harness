@@ -118,6 +118,48 @@ describe('remote compaction cancellation and fallback', () => {
     expect(fallback).not.toHaveBeenCalled()
   })
 
+  it.each([
+    {
+      name: 'adapter replay state',
+      message: {
+        role: 'assistant',
+        source: { kind: 'model', provider: 'relay', model: 'gpt-5.4', replayState: { responseId: 'opaque' } },
+        content: [{ type: 'text', text: 'history' }],
+      },
+      error: 'requires adapter-owned replay serialization',
+    },
+    {
+      name: 'an image in message content',
+      message: { role: 'user', content: [{ type: 'text', text: 'describe this' }, { type: 'image', attachment: { id: 'image-1' } }] },
+      error: 'cannot serialize this content losslessly',
+    },
+    {
+      name: 'an image in a tool result',
+      message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'call-1', content: [{ type: 'image', attachment: { id: 'image-1' } }] }] },
+      error: 'cannot serialize this content losslessly',
+    },
+  ])('falls back without fetching when history contains $name', async ({ message, error }) => {
+    const request = vi.fn()
+    vi.stubGlobal('fetch', request)
+    const ctx = compactionContext()
+    const options = {
+      ...compactionOptions(new AbortController().signal),
+      messages: [message, { role: 'user', content: [{ type: 'text', text: 'compact now' }] }] as never,
+    }
+    const fallback = vi.fn(async function* () {
+      yield { type: 'text-delta', index: 0, text: 'local summary' } as const
+      yield { type: 'finish', reason: { kind: 'stop' } } as const
+    })
+
+    await expect(collect(remoteCompactStream(ctx, options, fallback))).resolves.toEqual([
+      { type: 'text-delta', index: 0, text: 'local summary' },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ])
+    expect(request).not.toHaveBeenCalled()
+    expect(fallback).toHaveBeenCalledOnce()
+    expect(ctx.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining(error) }))
+  })
+
   it('uses local fallback when the remote endpoint fails without cancellation', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 503 })))
     const fallback = vi.fn(async function* () {

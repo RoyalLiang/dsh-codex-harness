@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ResilientPatchEngine } from '../src/domain/tooling/resilient-patch.ts'
 import { APPLY_PATCH_GRAMMAR, applyPatchHunks, parsePatch } from '../src/patch.ts'
 
 describe('Codex apply_patch language', () => {
@@ -63,6 +64,65 @@ describe('Codex apply_patch language', () => {
     }], 'file.txt')).toThrow(
       'Expected:\n  1: [space]missing\nFile excerpt:\n  1: [space][space]actual',
     )
+  })
+
+  it.each([
+    ['const amount = 1001;', 'const amount = 1000;'],
+    ['const userId = source;', 'const userID = source;'],
+  ])('rejects semantic drift in a deletion: %s', (actual, expected) => {
+    expect(() => applyPatchHunks(`${actual}\n`, [{
+      lines: [{ kind: 'delete', text: expected }, { kind: 'add', text: 'replacement' }],
+      endOfFile: false,
+    }])).toThrow('could not find expected lines')
+  })
+
+  it('does not dilute changed content with matching context lines', () => {
+    const [file] = parsePatch('*** Begin Patch\n*** Update File: file.txt\n@@\n before\n-const amount = 1000;\n+const amount = 2000;\n after\n*** End Patch')
+    if (file?.kind !== 'update') throw new Error('expected an update patch')
+    expect(() => applyPatchHunks('before\nconst amount = 1001;\nafter\n', file.hunks))
+      .toThrow('could not find expected lines')
+    expect(() => applyPatchHunks('before!\nconst amount = 1000;\nafter\n', file.hunks))
+      .toThrow('could not find expected lines')
+  })
+
+  it.each([
+    'old\nold\n',
+    'old \nold\t\n',
+    '  old\n\told\n',
+  ])('rejects ambiguous exact or whitespace matches: %j', original => {
+    expect(() => applyPatchHunks(original, [{
+      lines: [{ kind: 'delete', text: 'old' }, { kind: 'add', text: 'new' }],
+      endOfFile: false,
+    }])).toThrow('ambiguous hunk')
+  })
+
+  it('uses added context to disambiguate repeated lines and preserves other occurrences', () => {
+    const [file] = parsePatch('*** Begin Patch\n*** Update File: file.txt\n@@\n second\n-old\n+new\n*** End Patch')
+    if (file?.kind !== 'update') throw new Error('expected an update patch')
+    expect(applyPatchHunks('first\nold\nsecond\nold\n', file.hunks))
+      .toBe('first\nold\nsecond\nnew\n')
+  })
+
+  it('still accepts a unique indentation mismatch and prefers exact matches', () => {
+    const hunks = [{
+      lines: [{ kind: 'delete' as const, text: '  old' }, { kind: 'add' as const, text: '  new' }],
+      endOfFile: false,
+    }]
+    expect(applyPatchHunks('\told\n', hunks)).toBe('  new\n')
+    expect(applyPatchHunks('  old\n\told\n', hunks)).toBe('  new\n\told\n')
+  })
+
+  it('honors EOF to disambiguate repeated content', () => {
+    expect(applyPatchHunks('old\nold\n', [{
+      lines: [{ kind: 'delete', text: 'old' }, { kind: 'add', text: 'new' }],
+      endOfFile: true,
+    }])).toBe('old\nnew')
+  })
+
+  it('restricts the legacy fuzzy helper to unique whitespace-only matches regardless of threshold', () => {
+    expect(ResilientPatchEngine.findFuzzySequence(['const a = 2'], ['const a = 1'], 0, 0)).toBe(-1)
+    expect(ResilientPatchEngine.findFuzzySequence([' old ', '\told'], ['old'], 0)).toBe(-1)
+    expect(ResilientPatchEngine.findFuzzySequence(['before', '\told'], [' old '], 0)).toBe(1)
   })
 
   it('publishes the OpenAI custom grammar used by the freeform tool', () => {

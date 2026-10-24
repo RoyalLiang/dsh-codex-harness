@@ -48,9 +48,10 @@ const CODEX_SETTINGS_NAMESPACE = 'codex' as const
 
 interface CodexSettings {
   contextWindow?: number
+  universalCodexMode?: boolean
 }
 
-/** Codex context overrides apply only to GPT-compatible model routes. */
+/** Legacy opt-out keeps context overrides limited to GPT routes. */
 function isGptModel(model: string): boolean {
   return /(?:^|\/)(?:gpt|chatgpt)(?:[-_.]|\d|$)/i.test(model)
 }
@@ -63,10 +64,11 @@ interface ConfiguredContextWindow {
 }
 
 /** Read the live Codex capacity without requiring a custom LLM service API. */
-function configuredContextWindow(ctx: Context): ConfiguredContextWindow {
+function configuredContextWindow(ctx: Context, model: string): ConfiguredContextWindow {
   const descriptor = settingsDescriptor(ctx.get('settings'), CODEX_SETTINGS_NAMESPACE)
   if (descriptor === undefined) return { available: false }
   const value = descriptor.value as CodexSettings | undefined
+  if (value?.universalCodexMode === false && !isGptModel(model)) return { available: false }
   return {
     available: true,
     ...value?.contextWindow !== undefined
@@ -98,9 +100,7 @@ function activeContextWindow(
 ): number | undefined {
   const session = activeSession.getStore()
   const requestContext = session?.requestContext()
-  const configured = isGptModel(model)
-    ? configuredContextWindow(ctx)
-    : { available: false }
+  const configured = configuredContextWindow(ctx, model)
   // A live setting must win before the old request header: automatic pressure
   // runs before the next request rebuilds that header.
   return configured.available

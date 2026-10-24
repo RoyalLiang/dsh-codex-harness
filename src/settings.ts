@@ -10,16 +10,24 @@ import {
   DEFAULT_DSH_CORE_WEB_PROMPT,
 } from './prompt.ts'
 
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'default'
+
 /** Live Codex controls shared by the Web UI and agent layer. */
 export const CODEX_SETTINGS_NAMESPACE = 'codex' as SettingsNamespace
 
 export interface CodexSettings {
-  /** Use the Responses priority service tier for GPT requests. */
+  /** Use the Responses priority service tier for fast requests. */
   fast: boolean
   /** Show the Fast mode switch in the conversation composer. */
   fastModeControlEnabled: boolean
   /** Optional context capacity override, in tokens. */
   contextWindow?: number
+  /** Selected reasoning effort tier for thinking models. */
+  reasoningEffort: CodexReasoningEffort
+  /** Show reasoning effort selector in the composer. */
+  reasoningEffortControlEnabled: boolean
+  /** Uniformly apply Codex behavior, reasoning, and tools to all models. */
+  universalCodexMode: boolean
   /** Deployment Persona template; supports the host's prompt variables. */
   persona?: string
   /** DSH Core source-checkout guidance template. */
@@ -48,6 +56,9 @@ export interface CodexSettings {
 export const CODEX_SETTINGS_ENTRY: CodexSettings = {
   fast: false,
   fastModeControlEnabled: true,
+  reasoningEffort: 'medium',
+  reasoningEffortControlEnabled: true,
+  universalCodexMode: true,
   persona: DEFAULT_CODEX_PERSONA,
   harnessSourcePrompt: DEFAULT_DSH_CORE_SOURCE_PROMPT,
   webSurfacePrompt: DEFAULT_DSH_CORE_WEB_PROMPT,
@@ -65,6 +76,9 @@ export const CODEX_SETTINGS_SCHEMA: z<CodexSettings> = z.object({
   fast: z.boolean().default(false),
   fastModeControlEnabled: z.boolean().default(true),
   contextWindow: z.number().step(1).min(1).max(CODEX_CONTEXT_MAX),
+  reasoningEffort: z.union(['low', 'medium', 'high', 'xhigh', 'max', 'default']).default('medium'),
+  reasoningEffortControlEnabled: z.boolean().default(true),
+  universalCodexMode: z.boolean().default(true),
   persona: z.string().default(DEFAULT_CODEX_PERSONA),
   harnessSourcePrompt: z.string().default(DEFAULT_DSH_CORE_SOURCE_PROMPT),
   webSurfacePrompt: z.string().default(DEFAULT_DSH_CORE_WEB_PROMPT),

@@ -2,6 +2,8 @@
 
 记录日期：2026-10-24。版本：`@shuind/dsh-codex-harness@0.2.21-local.2`。
 
+> 本文是该历史版本的验证记录，不能作为当前 0.2.23 工作区或后续改动的测试、真实模型联调或部署证据。当前工作区已完成本轮源码实现；主任务同步类型检查、构建及完整回归（19 个文件、201 项，含新增 8 项请求与压缩边界回归）通过；真实宿主安装、GUI、提供方/API 与性能尚未验收。详见 [Codex 落地设计与验收](codex-landing.zh.md)。
+
 本版本基于 [shuind/dsh-codex-harness](https://github.com/shuind/dsh-codex-harness) 的 `0.2.21`，基线提交为 `079794c9c093b13aac30de3358a5312d4642a6ee`。感谢上游作者；保留原包名、上游归属与 MIT 许可证。本次为供 RoyalLiang 个人 fork 使用的独立优化，不代表上游正式版本，不涉及 npm 发布。
 
 ## 可移植改动

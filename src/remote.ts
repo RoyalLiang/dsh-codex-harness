@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, Message, StreamChunk, TokenUsage, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
@@ -60,7 +61,7 @@ function serviceTierOf(options: GenerateOptions): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
-function isGptModel(model: unknown): model is string {
+export function isGptModel(model: unknown): model is string {
   return typeof model === 'string' && /(?:^|\/)(?:gpt|chatgpt)(?:[-_.]|\d|$)/i.test(model)
 }
 
@@ -68,14 +69,19 @@ function settingsOf(ctx: Context): LlmSettings | undefined {
   return readSettings<LlmSettings>(ctx.get('settings'), SETTINGS_NAMESPACE)
 }
 
-function profileOf(ctx: Context, provider: string): ProviderProfile | undefined {
-  return settingsOf(ctx)?.providers?.[provider]
+function profileOf(ctx: Context, provider: string, model?: string): ProviderProfile | undefined {
+  const profile = settingsOf(ctx)?.providers?.[provider]
+  if (profile === undefined || model === undefined) return profile
+  const configured = profile as ProviderProfile & {
+    models?: Array<ProviderProfile & { id: string }>
+    modelOverrides?: Record<string, ProviderProfile>
+  }
+  return { ...profile, ...configured.models?.find(entry => entry.id === model), ...configured.modelOverrides?.[model] }
 }
 
-function supportsResponses(profile: ProviderProfile | undefined, provider: string): boolean {
+function supportsResponses(profile: ProviderProfile | undefined): boolean {
   return profile?.api === 'openai-responses'
     || profile?.api === 'openai-codex-responses'
-    || (profile?.api === undefined && provider === 'openai')
 }
 
 function responsesEndpoint(baseURL: string, suffix: 'responses' | 'responses/compact'): string {
@@ -87,7 +93,7 @@ function hasHeader(headers: Record<string, string> | undefined, name: string): b
 }
 
 async function apiHeaders(ctx: Context, profile: ProviderProfile): Promise<Record<string, string> | undefined> {
-  const headers: Record<string, string> = { ...profile.headers, 'content-type': 'application/json' }
+  const headers: Record<string, string> = { ...profile.headers, ...attributionHeaders(), 'content-type': 'application/json' }
   if (profile.apiKeyEnv !== undefined && !hasHeader(headers, 'authorization')) {
     const credentials = ctx.get('credentials') as {
       resolve(ref: string): Promise<{ value: string } | undefined>
@@ -412,7 +418,7 @@ function hasRemoteCompaction(body: JsonObject): boolean {
 }
 
 function canPatchBody(body: JsonObject, options: CodexRequestWireOptions): boolean {
-  return isGptModel(body.model)
+  return typeof body.model === 'string'
     && ((options.hostedWebSearch !== false && hasWebSearchTool(body))
       || hasRemoteCompaction(body)
       || (options.customApplyPatch !== false
@@ -422,7 +428,7 @@ function canPatchBody(body: JsonObject, options: CodexRequestWireOptions): boole
 
 /** Add provider options that older pi-ai adapters do not copy themselves. */
 function applyRequestWireOptions(body: JsonObject, options: CodexRequestWireOptions): JsonObject {
-  if (options.serviceTier === undefined || !isGptModel(body.model)) return body
+  if (options.serviceTier === undefined || typeof body.model !== 'string') return body
   return { ...body, service_tier: options.serviceTier }
 }
 
@@ -449,41 +455,23 @@ function installGlobalHostedWebSearchPatch(): () => void {
       return requestAndCapture(input, init)
     }
     const requestBody = applyRequestWireOptions(body, options)
-    if (!canPatchBody(requestBody, options)) {
-      if (requestBody === body) return requestAndCapture(input, init)
-      const headers = new Headers(request.headers)
-      headers.delete('content-length')
-      return requestAndCapture(new Request(request, {
-        body: JSON.stringify(requestBody),
-        headers,
-      }))
-    }
+    const enhanced = canPatchBody(requestBody, options)
+      ? rewriteCodexResponsesBody(requestBody, options)
+      : requestBody
+    if (enhanced === body) return requestAndCapture(input, init)
 
-    const fallbackHeaders = new Headers(request.headers)
-    fallbackHeaders.delete('content-length')
-    const fallbackRequest = requestBody === body
-      ? request.clone()
-      : new Request(request, {
-        body: JSON.stringify(requestBody),
-        headers: fallbackHeaders,
-      })
+    const fallbackRequest = request.clone()
     const headers = new Headers(request.headers)
     headers.delete('content-length')
-    const hostedRequest = new Request(request, {
-      body: JSON.stringify(rewriteCodexResponsesBody(requestBody, options)),
+    const response = await requestAndCapture(new Request(request, {
+      body: JSON.stringify(enhanced),
       headers,
-    })
-    try {
-      const hostedResponse = await requestAndCapture(hostedRequest)
-      // A rejected hosted-tool request is retried with the untouched request so
-      // dsh-tool-web can still produce the normal local function-tool path.
-      if (!hostedResponse.ok) return requestAndCapture(fallbackRequest)
-      return hostedResponse
-    } catch {
-      // Network and transport failures must have the same fallback behavior as
-      // an HTTP rejection; the local function-tool path remains available.
-      return requestAndCapture(fallbackRequest)
-    }
+    }))
+    request.signal.throwIfAborted()
+    // Only a rejected protocol extension is safe to retry without enhancements.
+    // Transport failures, authentication and rate limits belong to host retry policy.
+    if ([400, 404, 422].includes(response.status)) return requestAndCapture(fallbackRequest)
+    return response
   }
 
   globalThis.fetch = patched
@@ -700,9 +688,20 @@ async function remoteCompact(
   options: GenerateOptions,
   wireOptions: Pick<CodexRequestWireOptions, 'hostedWebSearch'> = {},
 ): Promise<RemoteCompactResult> {
-  const profile = profileOf(ctx, options.provider)
-  if (!supportsResponses(profile, options.provider) || profile?.baseURL === undefined) {
+  const profile = profileOf(ctx, options.provider, options.model)
+  if (!supportsResponses(profile) || profile?.baseURL === undefined) {
     throw new Error('Codex remote compaction requires an OpenAI Responses provider with baseURL')
+  }
+  for (const message of options.messages) {
+    if (message.source?.kind === 'model' && message.source.replayState !== undefined) {
+      throw new Error('Codex remote compaction requires adapter-owned replay serialization; using local compaction')
+    }
+    for (const block of message.content) {
+      if (block.type !== 'text' && block.type !== 'tool-call'
+        && !(block.type === 'tool-result' && block.content.every(item => item.type === 'text'))) {
+        throw new Error('Codex remote compaction cannot serialize this content losslessly; using local compaction')
+      }
+    }
   }
   const headers = await apiHeaders(ctx, profile)
   if (headers === undefined) throw new Error('Codex remote compaction has no configured API key')

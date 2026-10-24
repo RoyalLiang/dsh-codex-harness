@@ -14,6 +14,25 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { CODEX_SETTINGS_ENTRY } from '../src/settings.ts'
 
 describe('Codex request settings', () => {
+  it('resolves capabilities after the request waterfall without changing frozen history', async () => {
+    const order: string[] = []
+    let listener: ((payload: { signal: AbortSignal }, next: () => Promise<unknown>) => Promise<unknown>) | undefined
+    const ctx = {
+      get: () => undefined,
+      inject: () => {},
+      fs: { sandboxMode: undefined },
+      tools: { register: () => {} },
+      systemPrompt: { section: () => {}, context: () => {} },
+      llm: { resolveModelInfo: async () => { order.push('metadata'); return { provider: 'relay', id: 'custom', name: 'Custom' } } },
+      on: (name: string, fn: typeof listener) => { if (name === 'agent/request') listener = fn },
+    } as never
+    apply(ctx)
+    const request = Object.freeze({ provider: 'relay', model: 'custom' })
+    const result = await listener!({ signal: new AbortController().signal }, async () => { order.push('next'); return request })
+    expect(order).toEqual(['next', 'metadata'])
+    expect(result).toEqual(request)
+    expect(result).not.toHaveProperty('messages')
+  })
   it('keeps preset sections independent from shared overrides and preserves runtime and tool guidance', () => {
     const original = {
       sections: [
@@ -97,7 +116,7 @@ describe('Codex request settings', () => {
     expect((sectionText as () => string)()).toBe('Second prompt.')
   })
 
-  it('maps Fast to the priority service tier and carries a context override', () => {
+  it('keeps native reasoning independent of Fast and carries a context override', () => {
     const result = applyCodexRequestSettings({
       provider: 'relay',
       model: 'gpt-5.4',
@@ -112,8 +131,8 @@ describe('Codex request settings', () => {
       model: 'gpt-5.4',
       reasoningEffort: 'high',
       contextWindow: 131_072,
-      serviceTier: 'priority',
     })
+    expect(result).not.toHaveProperty('serviceTier')
   })
 
   it('puts the Codex persona first and removes the generic Harness identity', () => {
@@ -198,7 +217,7 @@ describe('Codex request settings', () => {
     expect(result.tools.map(tool => tool.name)).toEqual(['apply_patch', 'web_search'])
   })
 
-  it('clears stale Codex controls when Fast is off or the route is not GPT', () => {
+  it('clears stale service tiers and applies context overrides to every model', () => {
     expect(applyCodexRequestSettings({
       provider: 'relay',
       model: 'gpt-5.4',
@@ -214,6 +233,7 @@ describe('Codex request settings', () => {
     }, { fast: true, contextWindow: 32_000 })).toEqual({
       provider: 'relay',
       model: 'deepseek-chat',
+      contextWindow: 32_000,
     })
   })
 

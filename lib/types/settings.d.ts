@@ -1,15 +1,22 @@
 /** Shared host-side Codex settings contract. */
 import z from '@deepseek-ai/schemastery';
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings';
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'default';
 /** Live Codex controls shared by the Web UI and agent layer. */
 export declare const CODEX_SETTINGS_NAMESPACE: SettingsNamespace;
 export interface CodexSettings {
-    /** Use the Responses priority service tier for GPT requests. */
+    /** Use the Responses priority service tier for fast requests. */
     fast: boolean;
     /** Show the Fast mode switch in the conversation composer. */
     fastModeControlEnabled: boolean;
     /** Optional context capacity override, in tokens. */
     contextWindow?: number;
+    /** Selected reasoning effort tier for thinking models. */
+    reasoningEffort: CodexReasoningEffort;
+    /** Show reasoning effort selector in the composer. */
+    reasoningEffortControlEnabled: boolean;
+    /** Uniformly apply Codex behavior, reasoning, and tools to all models. */
+    universalCodexMode: boolean;
     /** Deployment Persona template; supports the host's prompt variables. */
     persona?: string;
     /** DSH Core source-checkout guidance template. */
