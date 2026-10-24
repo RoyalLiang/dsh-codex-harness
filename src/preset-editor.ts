@@ -25,7 +25,7 @@ export const DEFAULT_CODEX_PRESET_OPTIONS: CodexPresetOptions = {
 }
 const CODEX_OPTION_KEYS = Object.keys(DEFAULT_CODEX_PRESET_OPTIONS) as Array<keyof CodexPresetOptions>
 export interface ResolvedPresetForEditor {
-  id: string; trust: 'system' | 'user'; path: string; broken?: string
+  id: string; trust?: 'system' | 'user'; path?: string; broken?: string
   name?: string; description?: string
 }
 export interface AgentPresetsForEditor {
@@ -35,8 +35,8 @@ export interface AgentPresetsForEditor {
   resolve(id: string): Promise<ResolvedPresetForEditor>
   readDocument(id: string): Promise<{ content: string; name?: string; description?: string }>
   remoteExportList(): Promise<{ presets: Array<{ id: string; name?: string; description?: string; trust: 'system' | 'user'; isDefault: boolean; broken?: string }>; authorable: boolean }>
-  copy(from: string, id: string, name?: string): Promise<void>
-  remove(id: string): Promise<void>
+  copy?(from: string, id: string, name?: string): Promise<void>
+  remove?(id: string): Promise<void>
   readonly roots?: readonly { path: string; trust: 'system' | 'user' }[]
 }
 
@@ -78,9 +78,9 @@ function promptFields(doc: ReturnType<typeof yaml>) {
   const fields: Array<{ id: string; label: string; node: Scalar; row: YAMLMap; key: string }> = []
   function visit(sequence: unknown, parents: string[] = []) {
     if (!isSeq(sequence)) return
-    for (const row of sequence.items) {
+    for (const [index, row] of sequence.items.entries()) {
       if (!isMap(row) || row.get('disabled') === true) continue
-      const path = [...parents, String(row.get('id'))]
+      const path = [...parents, String(row.get('id') ?? `#${index}`)]
       const config = row.get('config', true)
       if (isSeq(config)) { visit(config, path); continue }
       if (!isMap(config)) continue
@@ -236,8 +236,10 @@ export function validateComposition(content: string): void {
     const row = entry as YAMLMap
     if (typeof row.get('name') !== 'string') throw new Error('invalid-preset-yaml')
     const id = row.get('id')
-    if (typeof id !== 'string' || ids.has(id)) throw new Error('invalid-preset-yaml')
-    ids.add(id)
+    if (id !== undefined) {
+      if (typeof id !== 'string' || ids.has(id)) throw new Error('invalid-preset-yaml')
+      ids.add(id)
+    }
   }
 }
 export function enhanceComposition(content: string): string {
@@ -362,6 +364,24 @@ export class CodexPresetEditor extends TypertRemoteService {
     const cached = this.indexed?.get(id)
     const preset = cached ?? await this.preset(id)
     if (preset.broken !== undefined) throw new Error('invalid-preset')
+    // Current registries publish profile declarations, with no owned files or
+    // authoring API. Keep the host's viewable composition available read-only.
+    if (preset.path === undefined) {
+      const document = await this.agentPresets.readDocument(id)
+      const composition = document.content
+      validateComposition(composition)
+      const codex = supportsCodex(composition)
+      const prompt = codex ? explicitPrompt(composition) : undefined
+      const shared = this.sharedSettings?.() ?? {}
+      return {
+        id, name: document.name ?? preset.name ?? id,
+        description: document.description ?? preset.description ?? '',
+        systemPrompt: prompt ?? shared.systemPrompt ?? DEFAULT_CODEX_SYSTEM_PROMPT,
+        inheritPrompt: prompt === undefined, revision: revision(composition, undefined),
+        editable: false, codex, codexOptions: readCodexPresetOptions(composition), composition,
+        promptSections: readPromptSections(composition, shared).map(section => ({ ...section, editable: false })),
+      }
+    }
     const [composition, metadata] = await Promise.all([readFile(preset.path, 'utf8'), optionalFile(resolve(dirname(preset.path), 'preset.yml'))])
     const meta = metadata ? yaml(metadata) : undefined
     validateComposition(composition)
@@ -390,6 +410,8 @@ export class CodexPresetEditor extends TypertRemoteService {
   }
   async create(rawInput: PresetCreateInput): Promise<PresetEditorDocument> {
     const input = validate(rawInput)
+    if (!this.agentPresets.copy || !this.agentPresets.remove) throw new Error('preset-read-only')
+    const remove = this.agentPresets.remove.bind(this.agentPresets)
     await this.preset(input.sourceId)
     const id = `codex-${randomUUID().slice(0, 12)}`
     await this.agentPresets.copy(input.sourceId, id, input.name)
@@ -405,13 +427,14 @@ export class CodexPresetEditor extends TypertRemoteService {
       return await this.update({ ...input, id, revision: copy.revision, composition: next })
     } catch (error) {
       // Only the copy created by this operation is rolled back.
-      await this.agentPresets.remove(id)
+      await remove(id)
       throw error
     }
   }
   async update(rawInput: PresetEditorInput): Promise<PresetEditorDocument> {
     const input = validate(rawInput)
     const preset = await this.preset(input.id)
+    if (preset.path === undefined) throw new Error('preset-read-only')
     if (preset.trust !== 'user') throw new Error('built-in presets cannot be edited here')
     const composition = resolve(preset.path)
     if (composition.split(/[\\/]/).at(-1) !== 'agent.cordis.yml') throw new Error('invalid-preset-path')

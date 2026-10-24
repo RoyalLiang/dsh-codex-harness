@@ -64,6 +64,30 @@ describe('preset editor YAML patches', () => {
 })
 
 describe('CodexPresetEditor', () => {
+  it('previews current registry declarations without paths and refuses legacy authoring', async () => {
+    let reads = 0
+    const composition = bundledComposition.replace(/^- id: .*\n  name:/gm, '- name:')
+    const registry = {
+      defaultId: 'standard',
+      list: async () => [{ id: 'standard', name: 'Profile preset', description: 'Profile composition' }],
+      resolve: async (id: string) => ({ id }),
+      readDocument: async () => { reads++; return { content: composition, name: 'Profile preset', description: 'Profile composition' } },
+    }
+    const service: CodexPresetEditor = Object.assign(Object.create(CodexPresetEditor.prototype), { agentPresets: registry })
+    expect(await service.catalog()).toEqual({
+      presets: [{ id: 'standard', name: 'Profile preset', description: 'Profile composition', editable: false, isDefault: true }],
+      authorable: false, excludedCount: 0,
+    })
+    expect(reads).toBe(0)
+    const document = await service.read('standard')
+    expect(document).toMatchObject({ id: 'standard', name: 'Profile preset', editable: false, codex: true, composition })
+    expect(document.promptSections.length).toBeGreaterThan(0)
+    expect(document.promptSections.every(section => !section.editable)).toBe(true)
+    const input = { name: 'Copy', description: '', systemPrompt: 'Prompt', inheritPrompt: false }
+    await expect(service.create({ ...input, sourceId: 'standard' })).rejects.toThrow('preset-read-only')
+    await expect(service.update({ ...input, id: 'standard' })).rejects.toThrow('preset-read-only')
+  })
+
   it('ships the Host Remote contract needed by the browser editor', () => {
     expect(TYPERT.face).toBe('host')
     expect(TYPERT.package).toBe('@shuind/dsh-codex-harness')

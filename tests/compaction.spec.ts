@@ -88,6 +88,60 @@ function pressureMeasurement(session: Session, totalTokens: number): TokenMeasur
   }
 }
 
+describe('Codex compaction failure recovery', () => {
+  it('preserves history after a partial summary fails and allows the next automatic attempt', async () => {
+    const ctx = new Context()
+    const session = sessionWithDurableContext(400_000)
+    const originalNodes = [...session.surface.nodes]
+    const originalMessages = originalNodes.map(seq => session.deriveEventMessage(session.events[seq]))
+    let fail = true
+    const stream = vi.fn(() => (async function* () {
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text: 'partial summary' }
+      if (fail) throw new Error('summary connection interrupted')
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'partial summary' } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    })())
+    ctx.provide('llm', {
+      resolveModelInfo: async () => ({
+        provider: PROVIDER, id: MODEL, name: MODEL, context: { contextWindow: 262_144 },
+      }),
+      stream,
+    } as never)
+    ctx.provide('tokenMeter', {
+      measure: () => pressureMeasurement(session, session.surface.replaceGeneration > 0 ? 0 : 381_000),
+      estimateMessage: () => 0,
+    } as never)
+    new CodexCompactionEngine(ctx, { auto: true, compactionRetries: 0 })
+    const next = vi.fn(async () => undefined)
+    const runStep = () => ctx.waterfall('agent/pre-step', {
+      agent: { session, options: { provider: PROVIDER, model: MODEL } },
+      messages: [], turn: 4, step: 1, signal: new AbortController().signal,
+    } as never, next)
+
+    try {
+      await expect(runStep()).resolves.toBeUndefined()
+      expect(next).toHaveBeenCalledOnce()
+      expect(session.surface.nodes).toEqual(originalNodes)
+      expect(originalNodes.map(seq => session.deriveEventMessage(session.events[seq]))).toEqual(originalMessages)
+      expect(session.surface.replaceGeneration).toBe(0)
+      expect(session.events.filter(event => event.type === 'compaction/start')).toHaveLength(1)
+      expect(session.events.filter(event => event.type === 'compaction/end')).toHaveLength(1)
+      expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
+
+      fail = false
+      await expect(runStep()).resolves.toBeUndefined()
+      expect(next).toHaveBeenCalledTimes(2)
+      expect(stream).toHaveBeenCalledTimes(2)
+      expect(session.surface.replaceGeneration).toBe(1)
+      expect(session.events.filter(event => event.type === 'compaction/start')).toHaveLength(2)
+      expect(session.events.filter(event => event.type === 'compaction/end')).toHaveLength(2)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+})
+
 describe('Codex compaction context capacity', () => {
   it('does not use the adapter default when request/context records a 400K override', async () => {
     const ctx = new Context()

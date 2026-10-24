@@ -5,7 +5,7 @@ import {
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import { apply, installCodexPreset, retireLegacyCodexPreset } from '../src/installer.ts'
+import { apply, bundledPresetDefinition, installCodexPreset, retireLegacyCodexPreset } from '../src/installer.ts'
 import { CODEX_SETTINGS_NAMESPACE } from '../src/settings.ts'
 
 const SOURCE = new URL('../presets/codex-collaboration/', import.meta.url)
@@ -19,6 +19,56 @@ function signature(directory: string): string {
 }
 
 describe('Codex preset installer', () => {
+  it('keeps child JavaScript expressions inert for the current registry', () => {
+    const definition = bundledPresetDefinition()
+    expect(definition).toMatchObject({ id: 'codex-collaboration', name: 'Codex 模式', order: 5 })
+    const rows = definition.plugins as Array<{ id: string; config?: Array<{ id: string; disabled?: unknown }> }>
+    const terminal = rows.find(row => row.id === 'codex-terminal')
+    expect(terminal?.config?.find(row => row.id === 'terminal-bash')?.disabled)
+      .toEqual({ __jsExpr: "process.platform === 'win32'" })
+  })
+
+  it('maps the retired workflow engine for current registries and preserves the legacy source', () => {
+    const rows = bundledPresetDefinition().plugins as Array<{
+      id: string; isolate?: Record<string, boolean>; config?: Array<{ id: string; name: string; config?: unknown }>
+    }>
+    const delegation = rows.find(row => row.id === 'delegation')
+    expect(delegation?.isolate?.workflowEngine).toBe(true)
+    expect(delegation?.config?.find(row => row.id === 'workflow-worker-thread')).toMatchObject({
+      name: '@deepseek-ai/dsh-workflow-ptc', config: { provider: 'spawn' },
+    })
+    expect(JSON.stringify(rows)).not.toContain('@deepseek-ai/dsh-workflow-worker-thread')
+    expect(readFileSync(new URL('agent.cordis.yml', SOURCE), 'utf8'))
+      .toContain("name: '@deepseek-ai/dsh-workflow-worker-thread'")
+  })
+
+  it('registers and disposes the preset with the current registry instead of copying legacy files', async () => {
+    const definitions: unknown[] = []
+    let disposed = false
+    let effect: (() => AsyncGenerator<unknown>) | undefined
+    const registry = { register: async (definition: unknown) => {
+      definitions.push(definition)
+      return () => { disposed = true }
+    } }
+    apply({
+      settings: { register: () => {} },
+      inject: (_names: string[], callback: (ctx: unknown) => void) => callback({
+        get: () => registry,
+        effect: (callback: () => AsyncGenerator<unknown>) => { effect = callback },
+      }),
+      logger: { warn: () => {} },
+    } as never)
+    expect(effect).toBeDefined()
+    const lifecycle = effect!()
+    const registration = await lifecycle.next()
+    expect(definitions).toHaveLength(1)
+    expect(definitions[0]).toMatchObject({ id: 'codex-collaboration' })
+    expect(disposed).toBe(false)
+    await (registration.value as () => Promise<void> | void)()
+    expect(disposed).toBe(true)
+    await lifecycle.return(undefined)
+  })
+
   it('exposes Codex settings before any Codex session is opened', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-codex-'))
     const previousHome = process.env['DSH_HOME']
@@ -26,6 +76,7 @@ describe('Codex preset installer', () => {
     process.env['DSH_HOME'] = root
     try {
       apply({
+        inject: (_names: string[], callback: (ctx: unknown) => void) => callback({ get: () => ({}) }),
         settings: {
           register: (namespace: unknown, _schema: unknown, options: { base?: unknown }) => {
             registrations.push({ namespace, base: options.base })

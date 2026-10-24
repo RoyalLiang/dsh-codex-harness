@@ -8,6 +8,7 @@ import {
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseDocument } from 'yaml'
 import {
   CODEX_SETTINGS_ENTRY, CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA,
 } from './settings.ts'
@@ -145,15 +146,68 @@ export function retireLegacyCodexPreset(
   }
 }
 
+/** Current DSH declares presets in profile composition rather than filesystem roots. */
+export interface PresetRegistryInstaller {
+  register(definition: { id: string; name?: string; description?: string; order?: number; plugins: unknown[] }): Promise<() => void | Promise<void>>
+}
+
+/** Read child expressions as inert Loader nodes; evaluation belongs to the mounted preset. */
+export function bundledPresetDefinition(sourceDir = SOURCE_PRESET_DIR) {
+  const document = parseDocument(readFileSync(join(sourceDir, 'agent.cordis.yml'), 'utf8'), {
+    customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (source: string) => ({ __jsExpr: source }) }],
+  })
+  if (document.errors.length) throw new Error('invalid bundled Codex composition')
+  const plugins: unknown = document.toJS()
+  if (!Array.isArray(plugins)) throw new Error('invalid bundled Codex composition')
+  // The directory preset remains compatible with older DSH. Current registries
+  // use the PTC engine, which consumes the same provider configuration.
+  function currentWorkflowEngine(rows: unknown[]): void {
+    for (const row of rows) {
+      if (typeof row !== 'object' || row === null) continue
+      const entry = row as Record<string, unknown>
+      if (entry.name === '@deepseek-ai/dsh-workflow-worker-thread') {
+        entry.name = '@deepseek-ai/dsh-workflow-ptc'
+      }
+      if (entry.group === true && Array.isArray(entry.config)) currentWorkflowEngine(entry.config)
+    }
+  }
+  currentWorkflowEngine(plugins)
+  const metadata = parseDocument(readFileSync(join(sourceDir, 'preset.yml'), 'utf8'))
+  if (metadata.errors.length) throw new Error('invalid bundled Codex metadata')
+  const name: unknown = metadata.get('name')
+  const description: unknown = metadata.get('description')
+  const order: unknown = metadata.get('order')
+  return {
+    id: BUNDLED_PRESET_ID,
+    ...(typeof name === 'string' ? { name } : {}),
+    ...(typeof description === 'string' ? { description } : {}),
+    ...(typeof order === 'number' ? { order } : {}),
+    plugins,
+  }
+}
+
 /** Install the preset during profile boot without changing the host tool catalog. */
 export function apply(ctx: Context): void {
-  try {
-    ctx.settings.register(CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA, { base: CODEX_SETTINGS_ENTRY })
-    installCodexPreset()
-    retireLegacyCodexPreset()
-  } catch (error) {
-    ctx.logger.warn(`dsh-codex: could not reconcile the Codex preset: ${String(error)}`)
-  }
+  ctx.settings.register(CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA, { base: CODEX_SETTINGS_ENTRY })
+  ctx.inject(['agentPresets'], presetCtx => {
+    const presets = presetCtx.get('agentPresets') as unknown as Partial<PresetRegistryInstaller>
+    if (typeof presets.register === 'function') {
+      presetCtx.effect(async function* () {
+        try {
+          yield await presets.register!(bundledPresetDefinition())
+        } catch (error) {
+          ctx.logger.warn(`dsh-codex: could not register the Codex preset: ${String(error)}`)
+        }
+      }, 'codex preset registration')
+      return
+    }
+    try {
+      installCodexPreset()
+      retireLegacyCodexPreset()
+    } catch (error) {
+      ctx.logger.warn(`dsh-codex: could not reconcile the Codex preset: ${String(error)}`)
+    }
+  })
 }
 
 export default { name, inject, apply }

@@ -165,12 +165,12 @@ export function PresetManagerCard({ presetManager, t }: Props) {
       <strong>{t('peTitle')}</strong>
       <button type="button" disabled={busy} onClick={() => { if (dirty && !window.confirm(t('pmDiscard'))) return; cache.clear(); void run(async () => { await refresh(); if (selectedId) await load(selectedId, false) }) }}>{t('pmRefresh')}</button>
     </div>
-    <p>{t('peHierarchy')}</p>
+    <p>{t(catalog?.authorable === false ? 'peProfileReadOnly' : 'peHierarchy')}</p>
     <label>{t('peSelect')}<select value={selectedId} disabled={busy || !catalog} onChange={event => { void load(event.target.value) }}>
       <option value="">{t('peSelectPlaceholder')}</option>
-      {catalog?.presets.map(row => <option key={row.id} value={row.id}>{row.name}{row.editable ? '' : ` · ${t('pmBuiltIn')}`}</option>)}
+      {catalog?.presets.map(row => <option key={row.id} value={row.id}>{row.name}{row.editable ? '' : ` · ${t(catalog.authorable ? 'pmBuiltIn' : 'pmReadOnly')}`}</option>)}
     </select></label>
-    {selectedRow && <p>{selectedRow.editable ? t('peEditable') : t('peBuiltinEdit')}</p>}
+    {selectedRow && catalog?.authorable && <p>{selectedRow.editable ? t('peEditable') : t('peBuiltinEdit')}</p>}
     {error && <div role="alert">
       <p>{errorAction === 'read'
         ? t(isPresetConnectionError(error) ? 'peConnectionError' : 'peReadError')
@@ -186,7 +186,7 @@ export function PresetManagerCard({ presetManager, t }: Props) {
     {draft && <>
       <label>{t('pmName')}<input value={draft.name} maxLength={200} disabled={busy || readOnly} onChange={event => patch({ name:event.target.value })} /></label>
       <label>{t('pmDescription')}<input value={draft.description} maxLength={4000} disabled={busy || readOnly} onChange={event => patch({ description:event.target.value })} /></label>
-      {!copyMode && <button type="button" disabled={busy || !catalog?.authorable} onClick={beginCopy}>{t('peCreateCopy')}</button>}
+      {!copyMode && catalog?.authorable && <button type="button" disabled={busy} onClick={beginCopy}>{t('peCreateCopy')}</button>}
       <div className="pe-block">
         <strong>{t('peSystemPrompt')}</strong>
         <p>{t('peSectionsHint')}</p>
@@ -198,7 +198,7 @@ export function PresetManagerCard({ presetManager, t }: Props) {
             disabled={busy || readOnly || !section.editable}
             onChange={event => patch({ promptSections: draft.promptSections.map(item => item.id === section.id ? { ...item, text: event.target.value } : item),
               ...(section.id === 'codex:base' ? { systemPrompt: event.target.value, inheritPrompt: false } : {}) })} />
-          {section.suppressed ? <p>{t('peCompletePersona')}</p> : !section.editable && <p>{t('peDynamicPrompt')}</p>}
+          {section.suppressed ? <p>{t('peCompletePersona')}</p> : !readOnly && !section.editable && <p>{t('peDynamicPrompt')}</p>}
         </details>)}
       </div>
       {!readOnly && <>

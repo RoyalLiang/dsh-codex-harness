@@ -3,7 +3,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { GenerateOptions, Message, StreamChunk, TokenUsage, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { APPLY_PATCH_DESCRIPTION, APPLY_PATCH_GRAMMAR } from './patch.ts'
@@ -38,6 +38,9 @@ const REMOTE_COMPACTION_OPEN = '<codex-remote-compaction>'
 const REMOTE_COMPACTION_CLOSE = '</codex-remote-compaction>'
 const CONTEXT_WINDOW_EXCEEDED_CODE = 'CONTEXT_WINDOW_EXCEEDED'
 const CODEX_ERROR_DIRECTORY = ['diagnostics', 'openai-codex-errors'] as const
+const MAX_DIAGNOSTIC_FILES = 32
+const MAX_DIAGNOSTIC_FRAME_CHARS = 1024 * 1024
+const MAX_DIAGNOSTIC_STREAM_BYTES = 8 * 1024 * 1024
 interface CodexRequestWireOptions {
   /** Provider-facing request option preserved by older DSH LLM adapters. */
   serviceTier?: string
@@ -122,6 +125,14 @@ function saveCodexErrorPayload(payload: string): void {
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   const filename = `${Date.now()}-${randomUUID()}.json`
   writeFileSync(join(directory, filename), `${payload}\n`, { flag: 'wx', mode: 0o600 })
+  // Only prune ordinary files whose names this writer owns; leave user files alone.
+  const owned = readdirSync(directory, { withFileTypes: true })
+    .filter(entry => entry.isFile() && /^\d+-[0-9a-f-]{36}\.json$/u.test(entry.name))
+    .map(entry => entry.name)
+    .sort((left, right) => Number(left.split('-')[0]) - Number(right.split('-')[0]) || left.localeCompare(right))
+  for (const stale of owned.slice(0, Math.max(0, owned.length - MAX_DIAGNOSTIC_FILES))) {
+    unlinkSync(join(directory, stale))
+  }
 }
 
 function errorPayloadFromSseFrame(frame: string): string | undefined {
@@ -145,15 +156,21 @@ async function captureCodexErrorPayloads(response: Response): Promise<void> {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let bytesRead = 0
+  let completed = false
   try {
     while (true) {
       const { done, value } = await reader.read()
+      if (done) completed = true
+      bytesRead += value?.byteLength ?? 0
+      if (bytesRead > MAX_DIAGNOSTIC_STREAM_BYTES) return
       buffer += decoder.decode(value, { stream: !done })
       while (true) {
         const delimiter = /\r?\n\r?\n/u.exec(buffer)
         if (delimiter?.index === undefined) break
         const frame = buffer.slice(0, delimiter.index)
         buffer = buffer.slice(delimiter.index + delimiter[0].length)
+        if (frame.length > MAX_DIAGNOSTIC_FRAME_CHARS) continue
         const payload = errorPayloadFromSseFrame(frame)
         if (payload === undefined) continue
         try {
@@ -162,9 +179,11 @@ async function captureCodexErrorPayloads(response: Response): Promise<void> {
           // Diagnostics must never replace the provider response or failure.
         }
       }
-      if (done) return
+      if (buffer.length > MAX_DIAGNOSTIC_FRAME_CHARS || done) return
     }
   } finally {
+    // A tee branch's cancel promise can await the original consumer; never await it.
+    if (!completed) void reader.cancel().catch(() => {})
     reader.releaseLock()
   }
 }
@@ -711,10 +730,14 @@ export function remoteCompactStream(
   return (async function* (): AsyncGenerator<StreamChunk> {
     try {
       const result = await remoteCompact(ctx, options, wireOptions)
+      // A completed response can race with cancellation before this continuation.
+      // Do not publish a checkpoint that automatic compaction could still commit.
+      options.signal?.throwIfAborted()
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: result.text }
       yield { type: 'block-end', index: 0, block: { type: 'text', text: result.text } }
       if (result.usage !== undefined) yield { type: 'usage', usage: result.usage }
+      options.signal?.throwIfAborted()
       yield { type: 'finish', reason: { kind: 'stop' } }
     } catch (error) {
       if (options.signal?.aborted) throw error

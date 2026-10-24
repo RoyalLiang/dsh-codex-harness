@@ -40,6 +40,48 @@ async function waitForFiles(directory: string): Promise<string[]> {
 }
 
 describe('Codex error diagnostics', () => {
+  it('bounds retained diagnostics while preserving unrelated files and the provider response', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-codex-errors-retention-'))
+    process.env['DSH_HOME'] = root
+    const wire = Array.from({ length: 40 }, (_, index) =>
+      `data: ${JSON.stringify({ type: 'error', message: `failure-${index}` })}\n\n`).join('')
+    globalThis.fetch = async () => new Response(wire, { headers: { 'content-type': 'text/event-stream' } })
+    const dispose = installHostedWebSearch()
+    try {
+      const response = await fetchInCodexScope()
+      expect(await response.text()).toBe(wire)
+      const directory = join(root, 'diagnostics', 'openai-codex-errors')
+      const files = await waitForFiles(directory)
+      expect(files).toHaveLength(32)
+      writeFileSync(join(directory, 'user-notes.json'), 'keep me')
+      const second = await fetchInCodexScope()
+      await second.text()
+      for (let attempt = 0; attempt < 20; attempt++) await new Promise<void>(resolve => setImmediate(resolve))
+      expect(readdirSync(directory)).toHaveLength(33)
+      expect(readFileSync(join(directory, 'user-notes.json'), 'utf8')).toBe('keep me')
+    } finally {
+      dispose()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('skips oversized diagnostic frames without truncating the provider response', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-codex-errors-large-'))
+    process.env['DSH_HOME'] = root
+    const wire = `data: ${JSON.stringify({ type: 'error', message: 'x'.repeat(1024 * 1024) })}\n\n`
+    globalThis.fetch = async () => new Response(wire, { headers: { 'content-type': 'text/event-stream' } })
+    const dispose = installHostedWebSearch()
+    try {
+      const response = await fetchInCodexScope()
+      expect(await response.text()).toBe(wire)
+      for (let attempt = 0; attempt < 20; attempt++) await new Promise<void>(resolve => setImmediate(resolve))
+      expect(existsSync(join(root, 'diagnostics', 'openai-codex-errors'))).toBe(false)
+    } finally {
+      dispose()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it.each(['error', 'response.failed'])('saves the complete %s SSE payload without changing the response', async (type) => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-codex-errors-'))
     process.env['DSH_HOME'] = root
