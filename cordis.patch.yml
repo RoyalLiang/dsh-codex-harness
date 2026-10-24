@@ -1,0 +1,9 @@
+- insert:
+    - id: royalliang-codex-harness
+      name: '@royalliang/dsh-codex-harness'
+      config:
+        enabled: true
+        fast: false
+        reasoningEffort: inherit
+        contextWindow: 0
+        instructions: ''

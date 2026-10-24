@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { Context } from '@deepseek-ai/cordis';
+import { ToolRuntime } from '@deepseek-ai/dsh-tools';
+import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt';
+import { LlmRuntime } from '@deepseek-ai/dsh-llm';
+import * as plugin from '../src/index.js';
+
+const ctx = new Context();
+await ctx.plugin(SystemPrompt);
+await ctx.plugin(ToolRuntime);
+await ctx.plugin(LlmRuntime);
+await ctx.plugin(plugin, plugin.Config({}));
+assert.ok(ctx.tools);
+assert.ok(ctx.llm);
+assert.ok(ctx.systemPrompt);
+assert.ok(ctx.tools.get('codex_harness_status'));
+console.log('REAL_HOST_LOAD_OK');
+await ctx.registry.delete(plugin);
+assert.equal(ctx.tools.get('codex_harness_status'), undefined);
+await ctx.plugin(plugin, plugin.Config({}));
+assert.ok(ctx.tools.get('codex_harness_status'));
+await ctx.registry.delete(plugin);
+await ctx.plugin(plugin, plugin.Config({ enabled: false }));
+assert.equal(ctx.tools.get('codex_harness_status'), undefined);
+await ctx.registry.delete(plugin);
+console.log('REAL_HOST_DISPOSE_RELOAD_DISABLED_OK');

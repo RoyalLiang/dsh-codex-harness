@@ -1,0 +1,29 @@
+{
+  "name": "@royalliang/dsh-codex-harness",
+  "version": "0.1.0",
+  "description": "Evidence-led coding policies and honest usage diagnostics for DeepSeek Harness",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": ["src", "cordis.patch.yml", "README.md", "README.en.md", "LICENSE"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" }
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/index.js && node --check src/controls.js && node --check src/usage.js && node --check src/policy.js"
+  },
+  "engines": { "node": ">=24" },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "^3.0.0",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2 || 0.2.1-rc.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RoyalLiang/dsh-codex-harness.git"
+  },
+  "author": "RoyalLiang",
+  "license": "MIT"
+}
