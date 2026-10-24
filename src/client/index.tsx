@@ -4,7 +4,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -77,7 +76,17 @@ interface CodexSettings {
   activityIndicatorEnabled: boolean
 }
 
-type CodexScope = SettingsScope<CodexSettings>
+/** Public settings surface shared with the host-owned configForms controller. */
+interface CodexScope {
+  getSnapshot(): {
+    status: 'loading' | 'ready' | 'unavailable'
+    value: CodexSettings | undefined
+    writable: boolean
+  }
+  subscribe(listener: () => void): () => void
+  set(field: string, value: unknown): Promise<boolean>
+  unset(field: string): Promise<boolean>
+}
 
 const en = {
   ...presetEn,
@@ -854,7 +863,7 @@ function LegacyOverlay(props: LegacyOverlayProps) {
 }
 
 export const inject = [
-  'commandUi', 'sessions', 'slots', 'locale', 'settingsScope',
+  'commandUi', 'sessions', 'slots', 'locale', 'configForms',
   'remote', 'remote.agentPresets', 'remote.settings',
 ]
 
@@ -884,7 +893,7 @@ function createPresetManager(ctx: Context): PresetManagerActions {
  */
 function registerPresetSettingsCard(
   ctx: Context,
-  settings: SettingsScope<CodexSettings>,
+  settings: CodexScope,
   presetManager: PresetManagerActions,
 ): () => void {
   const settingsPresetManager: PresetManagerActions = {
@@ -897,8 +906,8 @@ function registerPresetSettingsCard(
     locale: NS,
     inject: () => ({
       hooks: { settings },
-      setSetting: (field: string, value: unknown) => settings.set(field, value),
-      unsetSetting: (field: string) => settings.unset(field),
+      setSetting: async (field: string, value: unknown) => { await settings.set(field, value) },
+      unsetSetting: async (field: string) => { await settings.unset(field) },
       presetManager: settingsPresetManager,
     }),
   }, PromptSettingsCard))
@@ -930,12 +939,13 @@ export function apply(ctx: Context): void {
       },
     },
   }), 'codex client: /compact mode picker')
-  const settings = ctx.settingsScope.bind<CodexSettings>({ namespace: SETTINGS_NAMESPACE })
+  const configForms = ctx.get('configForms') as { get(entryId: string): CodexScope }
+  const settings = configForms.get(SETTINGS_NAMESPACE)
   const presetManager = createPresetManager(ctx)
   const injected = () => ({
     hooks: { settings },
-    setSetting: (field: string, value: unknown) => settings.set(field, value),
-    unsetSetting: (field: string) => settings.unset(field),
+    setSetting: async (field: string, value: unknown) => { await settings.set(field, value) },
+    unsetSetting: async (field: string) => { await settings.unset(field) },
     presetManager,
   })
   ctx.slots.inject(FAST_FALLBACK_SLOT, () => ctx.slots.register({

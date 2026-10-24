@@ -1,6 +1,6 @@
 {
   "name": "@shuind/dsh-codex-harness",
-  "version": "0.2.21-local.2",
+  "version": "0.2.21-local.3",
   "packageManager": "pnpm@9.15.9",
   "description": "Codex coding preset with customizable prompts and tools for DSH.",
   "type": "module",
@@ -82,7 +82,7 @@
   "license": "MIT",
   "dsh": {
     "engines": {
-      "dsh": "0.1.5-rc.2"
+      "dsh": "0.2.1-rc.2"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -90,7 +90,6 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-commands",

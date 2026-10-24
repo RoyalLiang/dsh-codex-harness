@@ -14,11 +14,13 @@ describe('Codex client settings', () => {
         ? { decorate: () => () => {} }
         : name === 'sessions'
           ? { binding: () => undefined }
-          : undefined,
+          : name === 'configForms'
+            ? { get: (entryId: string) => {
+                expect(entryId).toBe('codex')
+                return { set: async () => true, unset: async () => true }
+              } }
+            : undefined,
       locale: { register: () => undefined, bind: () => () => '' },
-      settingsScope: {
-        bind: () => ({ set: async () => {}, unset: async () => {} }),
-      },
       inject: (_deps: readonly string[], callback: (ctx: unknown) => unknown) => {
         callback({
           remote: undefined,
@@ -61,7 +63,7 @@ describe('Codex client settings', () => {
 
   it('declares every Remote namespace used by the preset manager', () => {
     expect(inject).toEqual([
-      'commandUi', 'sessions', 'slots', 'locale', 'settingsScope',
+      'commandUi', 'sessions', 'slots', 'locale', 'configForms',
       'remote', 'remote.agentPresets', 'remote.settings',
     ])
   })
@@ -94,7 +96,27 @@ describe('Codex client settings', () => {
     ctx.provide('commandUi', { decorate: () => () => {} })
     ctx.provide('sessions', { binding: () => undefined })
     ctx.provide('locale', { register: () => {}, bind: () => () => '' })
-    ctx.provide('settingsScope', { bind: () => ({ set: async () => {}, unset: async () => {} }) })
+    const settingsListeners = new Set<() => void>()
+    const settingsSnapshot = { status: 'ready', value: { fast: false }, writable: true }
+    const settingsController = {
+      getSnapshot: () => settingsSnapshot,
+      subscribe: (listener: () => void) => {
+        settingsListeners.add(listener)
+        return () => { settingsListeners.delete(listener) }
+      },
+      set: async (field: string, value: unknown) => {
+        calls.push(`configForms/set/${field}/${value}`)
+        return true
+      },
+      unset: async (field: string) => {
+        calls.push(`configForms/unset/${field}`)
+        return true
+      },
+    }
+    ctx.provide('configForms', { get: (entryId: string) => {
+      expect(entryId).toBe('codex')
+      return settingsController
+    } })
     const registrations: Array<{ name?: string; key?: string; inject?: () => any }> = []
     ctx.provide('slots', {
       inject: (_key: string, callback: () => unknown) => callback(),
@@ -104,14 +126,26 @@ describe('Codex client settings', () => {
       },
     })
 
+    // This is the actual current-host service set: no settingsScope alias.
+    expect(ctx.get('settingsScope')).toBeUndefined()
     await ctx.plugin({ inject: [...inject], apply }).await()
     const settingsEntry = registrations.find(entry => entry.name === 'settings.plugin.item')
     expect(settingsEntry).toBeDefined()
-    const manager = settingsEntry!.inject!().presetManager
+    const settingsFace = settingsEntry!.inject!()
+    expect(settingsFace.hooks.settings).toBe(settingsController)
+    expect(settingsFace.hooks.settings.getSnapshot()).toBe(settingsSnapshot)
+    const unsubscribe = settingsFace.hooks.settings.subscribe(() => {})
+    expect(settingsListeners.size).toBe(1)
+    unsubscribe()
+    expect(settingsListeners.size).toBe(0)
+    await expect(settingsFace.setSetting('fast', true)).resolves.toBeUndefined()
+    await expect(settingsFace.unsetSetting('contextWindow')).resolves.toBeUndefined()
+    const manager = settingsFace.presetManager
     expect(await manager.remote.agentPresets.list()).toMatchObject({ ok: true })
     expect(await manager.remote.settings.update('agent-presets', { default: 'codex' })).toMatchObject({ ok: true })
     expect(await manager.remote.codexPresetEditor.read('codex')).toMatchObject({ ok: true })
     expect(calls).toEqual([
+      'configForms/set/fast/true', 'configForms/unset/contextWindow',
       'agentPresets/list', 'settings/update', 'codexPresetEditor/read',
     ])
     await ctx.fiber.dispose()
