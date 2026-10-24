@@ -1,15 +1,15 @@
 # DSH Codex Harness
 
-面向 DeepSeek Harness（DSH）的独立插件，包名 `@royalliang/dsh-codex-harness`，版本 `0.1.3`。GitHub 仓库：`RoyalLiang/dsh-codex-harness`。
+面向 DeepSeek Harness（DSH）的独立插件，包名 `@royalliang/dsh-codex-harness`，版本 `0.1.4`。GitHub 仓库：`RoyalLiang/dsh-codex-harness`。
 
-利用 DSH 原生执行、权限、后台任务和子代理生命周期，提供精简行为策略、安全的请求参数适配、基于真实 usage 的 token/cache 诊断，以及 `Codex 模式` 预设与输入栏的模型/推理等级/Fast 控件。
+利用 DSH 原生执行、权限、后台任务和子代理生命周期，提供精简行为策略、安全的请求参数适配、基于真实 usage 的 token/cache 诊断，以及 `Codex 模式` 预设与输入栏的 Fast 开关。
 
 ## 能力与边界
 
 - 行为策略覆盖证据与未知、结果验证、取消与权限、子代理任务边界和真实 ID、结果收集、稳定提示词前缀，以及压缩后保留未完成目标。`instructions` 可追加补充策略。
 - 推理强度仅在 `ctx.llm.resolveModelInfo` 确认存在匹配的 `effort.id` 时覆写，否则继承并报告 `unsupported`。模型信息查询和取消错误向上传播。
 - 通过 bundle patch 声明 `Codex 模式` 预设（身份 `codex-collaboration`），组合复用宿主 `standard` 预设的插件清单，仅替换人格前缀。预设清单是完整组合，不继承其他预设。
-- 客户端 bundle 在输入栏 `conversation.input.right` 显示当前会话模型与生效推理等级，并提供 Fast 开关，写入本插件的 `fast` 配置。
+- 客户端 bundle 在输入栏 `conversation.input.right` 提供 Fast 开关，写入本插件的 `fast` 配置。会话使用的模型与推理等级由输入栏原有的模型席位显示，插件不重复渲染同一标签。
 - Fast 开启后，对 `gpt-*` 模型的 `POST .../responses`（含 `/responses/compact`）请求体附加 `service_tier: "priority"`；其他模型和非 Responses 请求不受影响，插件卸载时恢复。宿主公开接口没有 service tier 字段，这是受控的 fetch 兜底。
 - 上下文窗口仍仅表达请求：公开 `GenerateOptions` 无对应接口，状态为 `unsupported-public-api`，不会扩大模型容量。
 
@@ -23,21 +23,21 @@
 npm pack
 ```
 
-产物为 `royalliang-dsh-codex-harness-0.1.3.tgz`。
+产物为 `royalliang-dsh-codex-harness-0.1.4.tgz`。
 
 **桌面应用：通过 Electron 插件管理器安装这个本地 tgz。** `desktop` profile 由 Electron 应用独占管理，CLI 安装会报错 `profile "desktop" is managed exclusively by the Electron application`。不要通过 CLI 或手写该 profile 的 `package.json` 安装插件。安装后重启宿主并创建新会话。
 
 仅对于非受管理 profile，可使用 CLI，将下面的 profile 名及文件绝对路径替换为实际值：
 
 ```sh
-dsh plugin --profile my-profile add file:/absolute/path/royalliang-dsh-codex-harness-0.1.3.tgz --ignore-scripts
+dsh plugin --profile my-profile add file:/absolute/path/royalliang-dsh-codex-harness-0.1.4.tgz --ignore-scripts
 ```
 
 该命令将安装操作转交给 pnpm。包内通过 `dsh.bundle.patch='./cordis.patch.yml'` 注册官方 bundle patch，插入插件行与 `Codex 模式` 预设行；注册方式和公开 patch 语法已验证。桌面安装结果以宿主插件管理器的兼容检查为准。
 
 ## 模式与输入栏控件
 
-安装并重启后，新会话的 Agent 预设菜单会出现「Codex 模式」（身份 `codex-collaboration`，沿用旧插件会话记录）。输入栏右侧显示当前会话模型、生效推理等级，以及绑定本插件 `fast` 配置的 Fast 开关。
+安装并重启后，新会话的 Agent 预设菜单会出现「Codex 模式」（身份 `codex-collaboration`，沿用旧插件会话记录）。输入栏保留宿主自带的模型席位（显示会话使用的模型与生效推理等级），右侧新增绑定本插件 `fast` 配置的 Fast 开关。
 
 推理等级由模型目录决定：若提供商的模型没有声明 `reasoningEfforts`，宿主不会给出等级选项。此时可在 profile 的 `llm-pi-ai` 配置里为该模型补充 `reasoningEfforts`；插件不会篡改其他插件的配置。
 
@@ -81,7 +81,7 @@ dsh plugin --profile my-profile add file:/absolute/path/royalliang-dsh-codex-har
 | 已验证 SDK | `0.2.1-rc.2`、`0.2.1-rc.3` |
 | 本机 desktop NEXT 应用 | `2.0.19-next`，内置 SDK `0.2.1-rc.2` |
 | desktop 内嵌运行时 | Node.js `24.21.0` / Electron `44.0.0` |
-| 本插件 | `0.1.3` |
+| 本插件 | `0.1.4` |
 
 SDK、桌面应用、内嵌运行时与插件版本分别演进，不保证兼容旧宿主。此前 npm metadata 记录（2026-10-23 modified）为 `latest=0.2.1-rc.2`、`next=0.2.1-rc.3`，不是持续更新的查询或兼容承诺。
 
@@ -95,7 +95,7 @@ npm run check
 源包在 Node.js `24.21.0` 环境已完成：
 
 - 全新 `npm install`，安装 23 个包；`npm run check` 通过。
-- SDK `0.2.1-rc.2` 与 `0.2.1-rc.3` 分别运行同一套 `node --test`：各 17 项通过、0 项失败，包括 7 项行为测试、3 项 Fast 兜底测试、3 项打包与 patch 结构测试、2 项客户端 bundle 装载与注册测试、1 项 SDK 断言集，以及 1 项真实 Cordis 运行时装载、工具注册、注销、重载和禁用测试。
+- SDK `0.2.1-rc.2` 与 `0.2.1-rc.3` 分别运行同一套 `node --test`：各 18 项通过、0 项失败，包括 7 项行为测试、3 项 Fast 兜底测试、3 项打包与 patch 结构测试、3 项客户端 bundle 装载与注册测试、1 项 SDK 断言集，以及 1 项真实 Cordis 运行时装载、工具注册、注销、重载和禁用测试。
 - `npm pack` 通过，包含 11 个发布文件；bundle 注册、`Codex 模式` 预设行及公开 patch 语法已验证。
 
 未进行私有模型真实请求或 token/cache 节省基准测试。上述检查不代表当前桌面会话已热重载、模型端效果或性能节省结论。

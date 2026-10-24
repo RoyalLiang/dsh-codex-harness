@@ -27,5 +27,6 @@ test('client bundle registers the input controls', async () => {
   assert.match(client, /conversation\.input\.right/u);
   assert.match(client, /const ENTRY = "royalliang-codex-harness"/u);
   assert.match(client, /scope\.configForms\.get\(ENTRY\)/u);
-  assert.match(client, /modelDirectories\.directoryFor/u);
+  assert.match(client, /form\.set\("fast", next\)/u);
+  assert.doesNotMatch(client, /modelDirectories/u);
 });
