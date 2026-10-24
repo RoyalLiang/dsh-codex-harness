@@ -1,8 +1,10 @@
-# @shuind/dsh-codex-harness
+# Codex Harness for DSH — RoyalLiang
 
 为 DSH 提供可自定义提示词与 Codex 工具的编码模式。
 
-本地开发中的新版支持直接编辑 DSH 预设、加入 Codex 能力及另存副本，详见 [预设编辑说明](docs/preset-library.md)。尚未发布到 npm。
+本仓库由 [RoyalLiang](https://github.com/RoyalLiang/dsh-codex-harness) 独立维护，基于 [shuind/dsh-codex-harness](https://github.com/shuind/dsh-codex-harness) 的 MIT 版本演进。保留 `@shuind/dsh-codex-harness` 包标识以兼容已有设置；独立版本通过本仓库的 Git 标签安装，未发布到原作者的 npm 包。
+
+支持直接编辑 DSH 预设、加入 Codex 能力及另存副本，详见 [预设编辑说明](docs/preset-library.md)。维护和发布步骤见 [独立维护说明](docs/maintenance.md)。
 
 ## 功能
 
@@ -17,19 +19,18 @@
 ## 安装
 
 ```sh
-dsh plugin --profile web add @shuind/dsh-codex-harness@latest
+dsh plugin --profile desktop add 'git+ssh://git@github.com/RoyalLiang/dsh-codex-harness.git#v0.2.22' --ignore-scripts
 ```
 
-重启 Web，在 **Agent 预设** 中选择 **Codex 模式**，再创建会话。
+Web Profile 可将 `desktop` 替换为 `web`。需要已有 GitHub SSH 访问授权。仓库标签包含预构建运行文件，安装无需本地 TypeScript 或构建工具；版本固定到标签，后续升级时显式替换标签。
+
+重启 DSH，在 **Agent 预设** 中选择 **Codex 模式**，再创建会话。
 
 ### 宿主版本
 
-Codex 模式使用 `@deepseek-ai/dsh-persona` 的 `prefix` 配置。宿主必须提供
-`@deepseek-ai/dsh-persona >=0.1.3-alpha.2`；当前的 DSH `0.1.5-rc.2` 满足此要求。
-更早的 persona 版本只接受 `text`，会在加载预设时报告缺少 `prefix`。
+当前独立版本要求 **DSH NEXT 0.2.1-rc.2 或更新版本**，使用新版 `configForms` 设置服务和预设注册接口。旧版 `settingsScope` 已移除依赖。
 
-预设管理还需要 DSH 的 `agent-presets`、`api-remotes`、`atomic-write` 和 `typert-protocol` 接口至少为
-`0.1.5-rc.2`。较旧宿主仍可加载 Codex 工具层，但不会注册预设编辑入口。
+Codex 模式使用 `@deepseek-ai/dsh-persona` 的 `prefix` 配置，需要宿主提供相应 persona、预设管理、Remote 与 TypeScript workflow 服务。
 
 ### 已有自定义预设
 

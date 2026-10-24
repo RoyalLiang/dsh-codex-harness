@@ -1,0 +1,2 @@
+# Generated bundles include dependency text with intentional whitespace.
+lib/** text eol=lf -whitespace

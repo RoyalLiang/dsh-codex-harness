@@ -1,6 +1,6 @@
 {
   "name": "@shuind/dsh-codex-harness",
-  "version": "0.2.21-local.3",
+  "version": "0.2.22",
   "packageManager": "pnpm@9.15.9",
   "description": "Codex coding preset with customizable prompts and tools for DSH.",
   "type": "module",
@@ -63,12 +63,15 @@
     "build": "tsc --noCheck -p tsconfig.json && tsdown",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "pack:check": "npm pack --dry-run",
-    "prepare": "npm run build"
+    "pack:check": "npm run build && npm pack --dry-run"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shuind/dsh-codex-harness.git"
+    "url": "git+https://github.com/RoyalLiang/dsh-codex-harness.git"
+  },
+  "homepage": "https://github.com/RoyalLiang/dsh-codex-harness#readme",
+  "bugs": {
+    "url": "https://github.com/RoyalLiang/dsh-codex-harness/issues"
   },
   "keywords": [
     "dsh-plugin",
