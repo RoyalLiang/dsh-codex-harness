@@ -92,6 +92,17 @@ describe('CodexPresetEditor', () => {
     expect(TYPERT.face).toBe('host')
     expect(TYPERT.package).toBe('@shuind/dsh-codex-harness')
     expect(TYPERT.invocations.map(invocation => invocation.method)).toEqual(['catalog', 'read', 'update', 'create'])
+    for (const invocation of TYPERT.invocations) {
+      expect(invocation.result.create().parse).toBeTypeOf('function')
+      for (const parameter of invocation.parameters) {
+        expect(parameter.codec.create().parse).toBeTypeOf('function')
+      }
+    }
+    const update = TYPERT.invocations.find(invocation => invocation.method === 'update')!
+    expect(() => update.parameters[0]!.codec.create().parse({ id: 'missing-fields' })).toThrow()
+    const catalog = TYPERT.invocations.find(invocation => invocation.method === 'catalog')!
+    expect(catalog.result.create().parse({ presets: [], authorable: false, excludedCount: 0 }))
+      .toEqual({ presets: [], authorable: false, excludedCount: 0 })
   })
 
   it('marks every editor method for the Typert gateway', () => {

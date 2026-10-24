@@ -6,6 +6,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { isMap, isScalar, isSeq, parseDocument, Scalar, YAMLMap } from 'yaml'
 import { DEFAULT_CODEX_PERSONA, DEFAULT_CODEX_SYSTEM_PROMPT, DEFAULT_DSH_CORE_SOURCE_PROMPT, DEFAULT_DSH_CORE_WEB_PROMPT } from './prompt.ts'
 import type { CodexSettings } from './settings.ts'
+import { readSettings } from './settings-compat.ts'
 import type { CodexPresetOptions, PresetCatalog, PresetCreateInput, PresetEditorInput, PresetEditorDocument, PresetPromptSection } from './preset-contract.ts'
 export type { PresetEditorInput, PresetEditorDocument } from './preset-contract.ts'
 
@@ -338,8 +339,8 @@ export class CodexPresetEditor extends TypertRemoteService {
   constructor(ctx: Context, _config?: undefined) {
     super(ctx, 'codexPresetEditor')
     this.agentPresets = ctx.get('agentPresets') as unknown as AgentPresetsForEditor
-    const settings = ctx.get('settings') as unknown as { get(ns: string): Partial<CodexSettings> | undefined }
-    this.sharedSettings = () => settings?.get('codex') ?? {}
+    const settings = ctx.get('settings')
+    this.sharedSettings = () => readSettings<Partial<CodexSettings>>(settings, 'codex') ?? {}
   }
   async catalog(): Promise<PresetCatalog> {
     if (this.agentPresets.list) {

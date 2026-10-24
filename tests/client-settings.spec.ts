@@ -16,7 +16,7 @@ describe('Codex client settings', () => {
           ? { binding: () => undefined }
           : name === 'configForms'
             ? { get: (entryId: string) => {
-                expect(entryId).toBe('codex')
+                expect(entryId).toBe('codex-preset-installer')
                 return { set: async () => true, unset: async () => true }
               } }
             : undefined,
@@ -58,7 +58,7 @@ describe('Codex client settings', () => {
     expect(registrations
       .filter(entry => entry.name === 'settings.plugin.item')
       .map(({ name, key }) => ({ name, key })))
-      .toEqual([{ name: 'settings.plugin.item', key: 'codex' }])
+      .toEqual([{ name: 'settings.plugin.item', key: 'codex-preset-installer' }])
   })
 
   it('declares every Remote namespace used by the preset manager', () => {
@@ -114,7 +114,7 @@ describe('Codex client settings', () => {
       },
     }
     ctx.provide('configForms', { get: (entryId: string) => {
-      expect(entryId).toBe('codex')
+      expect(entryId).toBe('codex-preset-installer')
       return settingsController
     } })
     const registrations: Array<{ name?: string; key?: string; inject?: () => any }> = []

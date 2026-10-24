@@ -8,6 +8,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm'
+import { settingsDescriptor } from './settings-compat.ts'
 
 type LlmService = NonNullable<Context['llm']>
 type CodexGenerateOptions = GenerateOptions & { contextWindow?: number }
@@ -63,9 +64,9 @@ interface ConfiguredContextWindow {
 
 /** Read the live Codex capacity without requiring a custom LLM service API. */
 function configuredContextWindow(ctx: Context): ConfiguredContextWindow {
-  const settings = ctx.get('settings') as { get?: (namespace: unknown) => unknown } | undefined
-  if (settings?.get === undefined) return { available: false }
-  const value = settings?.get?.(CODEX_SETTINGS_NAMESPACE) as CodexSettings | undefined
+  const descriptor = settingsDescriptor(ctx.get('settings'), CODEX_SETTINGS_NAMESPACE)
+  if (descriptor === undefined) return { available: false }
+  const value = descriptor.value as CodexSettings | undefined
   return {
     available: true,
     ...value?.contextWindow !== undefined

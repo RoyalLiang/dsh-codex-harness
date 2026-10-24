@@ -19,13 +19,13 @@ export declare const TYPERT: {
             codec: {
                 mode: "strict";
                 typeSymbol: string;
-                schema: z.ZodType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
+                create: () => z.ZodType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
             };
         }[];
         result: {
             mode: "strict";
             typeSymbol: string;
-            schema: z.ZodType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
+            create: () => z.ZodType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
         };
     }[];
     model: {

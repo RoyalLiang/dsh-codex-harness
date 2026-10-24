@@ -53,7 +53,7 @@ interface CompactCommandSessions {
 }
 
 const NS = 'codex' as const
-const SETTINGS_NAMESPACE = 'codex'
+const SETTINGS_NAMESPACE = 'codex-preset-installer'
 const FAST_FALLBACK_SLOT = 'conversation.input.right' as const
 const LEGACY_OVERLAY_SLOT = 'conversation.input.overlay' as const
 const PLUGIN_SETTINGS_SLOT = 'settings.plugin.item' as const

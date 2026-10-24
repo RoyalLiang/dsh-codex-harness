@@ -57,9 +57,9 @@ function descriptor(
       name: parameter,
       wire: parameter,
       source: 'json' as const,
-      codec: { mode: 'strict' as const, typeSymbol: `${id}:${parameter}`, schema: input },
+      codec: { mode: 'strict' as const, typeSymbol: `${id}:${parameter}`, create: () => input },
     }],
-    result: { mode: 'strict' as const, typeSymbol: `${id}:result`, schema: output },
+    result: { mode: 'strict' as const, typeSymbol: `${id}:result`, create: () => output },
   }
 }
 

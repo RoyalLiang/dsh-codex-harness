@@ -5,7 +5,7 @@
 ## 安装与更新
 
 ```sh
-dsh plugin --profile desktop add 'git+ssh://git@github.com/RoyalLiang/dsh-codex-harness.git#v0.2.22' --ignore-scripts
+dsh plugin --profile desktop add 'git+ssh://git@github.com/RoyalLiang/dsh-codex-harness.git#v0.2.23' --ignore-scripts
 ```
 
 Web Profile 使用 `--profile web`。安装机需要可用的 GitHub SSH 授权。版本固定到已发布标签；更新时先查看变更说明，再将标签替换为新版本。不要使用 npm 上的 `@latest` 更新本独立版本，也不要依赖本地 `.tgz` 文件。
@@ -22,6 +22,15 @@ Web Profile 使用 `--profile web`。安装机需要可用的 GitHub SSH 授权�
 6. 从远程标签安装到测试 Profile，核对锁文件中的提交和运行文件，然后再升级实际 Profile。
 
 `prepare` 安装钩子已移除，避免 Git 安装再次拉取开发依赖或在用户机器上编译。打包检查命令 `pnpm pack:check` 会先执行构建。
+
+## 0.2.23
+
+- 修复新版 Typert 要求的 codec `create()` 工厂，避免清单失败导致 `llm/listProviders` 定义被撤销。
+- 迁移后端设置到 Config 派生表单；Web 控制器与后端共享 `codex-preset-installer` entry ID。
+- 通过 `describe()` 读取设置，写回模型配置时保留 revision；请求、提示词和压缩路径继续读取实时设置。
+- 新增 `scripts/verify-host-compat.mjs`，使用实际安装的宿主 ASAR 验证加载器、注册表、网关、LLM、设置表单以及插件启动。
+
+宿主验证需在 Electron 的 Node 模式下执行，先设置 `ELECTRON_RUN_AS_NODE=1` 和 `DSH_HOST_ASAR`，再使用桌面程序运行该脚本。配置编辑器、预设注册表及非目标依赖使用隔离 fixture；该检查不会改动实际 Profile 或调用模型。
 
 ## 0.2.22
 

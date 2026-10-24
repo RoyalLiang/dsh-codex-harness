@@ -5,7 +5,7 @@ import {
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import { apply, bundledPresetDefinition, installCodexPreset, retireLegacyCodexPreset } from '../src/installer.ts'
+import { Config, apply, bundledPresetDefinition, installCodexPreset, retireLegacyCodexPreset } from '../src/installer.ts'
 import { CODEX_SETTINGS_NAMESPACE } from '../src/settings.ts'
 
 const SOURCE = new URL('../presets/codex-collaboration/', import.meta.url)
@@ -19,6 +19,10 @@ function signature(directory: string): string {
 }
 
 describe('Codex preset installer', () => {
+  it('exposes volatile settings metadata with independently installed schemastery', () => {
+    const json = Config.toJSON()
+    expect(json.refs[json.uid].meta).toMatchObject({ volatile: true })
+  })
   it('keeps child JavaScript expressions inert for the current registry', () => {
     const definition = bundledPresetDefinition()
     expect(definition).toMatchObject({ id: 'codex-collaboration', name: 'Codex 模式', order: 5 })
@@ -51,7 +55,7 @@ describe('Codex preset installer', () => {
       return () => { disposed = true }
     } }
     apply({
-      settings: { register: () => {} },
+      settings: { describe: () => [] },
       inject: (_names: string[], callback: (ctx: unknown) => void) => callback({
         get: () => registry,
         effect: (callback: () => AsyncGenerator<unknown>) => { effect = callback },

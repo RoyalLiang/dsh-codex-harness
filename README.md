@@ -19,7 +19,7 @@
 ## 安装
 
 ```sh
-dsh plugin --profile desktop add 'git+ssh://git@github.com/RoyalLiang/dsh-codex-harness.git#v0.2.22' --ignore-scripts
+dsh plugin --profile desktop add 'git+ssh://git@github.com/RoyalLiang/dsh-codex-harness.git#v0.2.23' --ignore-scripts
 ```
 
 Web Profile 可将 `desktop` 替换为 `web`。需要已有 GitHub SSH 访问授权。仓库标签包含预构建运行文件，安装无需本地 TypeScript 或构建工具；版本固定到标签，后续升级时显式替换标签。

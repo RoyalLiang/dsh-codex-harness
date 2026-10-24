@@ -1,6 +1,7 @@
 /** Install the user-visible Codex agent preset supplied by this bundle. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync,
@@ -54,6 +55,12 @@ function dshHomePath(...segments: string[]): string {
 /** Bundle plugin name for the preset installer. */
 export const name = 'codex-preset-installer'
 export const inject = ['settings']
+
+// The host reads Config.meta.volatile even when the independently installed
+// schemastery package predates the volatile() convenience method. Clone the
+// schema so legacy registration keeps its original plain settings contract.
+export const Config = new z(CODEX_SETTINGS_SCHEMA.toJSON())
+Object.assign(Config.meta, { volatile: true })
 
 function presetSignature(directory: string): string | undefined {
   if (PRESET_FILES.some(file => !existsSync(join(directory, file)))) return undefined
@@ -188,7 +195,12 @@ export function bundledPresetDefinition(sourceDir = SOURCE_PRESET_DIR) {
 
 /** Install the preset during profile boot without changing the host tool catalog. */
 export function apply(ctx: Context): void {
-  ctx.settings.register(CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA, { base: CODEX_SETTINGS_ENTRY })
+  const settings = ctx.settings as unknown as {
+    register?: (namespace: unknown, schema: unknown, options: { base: unknown }) => unknown
+  }
+  if (typeof settings.register === 'function') {
+    settings.register(CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA, { base: CODEX_SETTINGS_ENTRY })
+  }
   ctx.inject(['agentPresets'], presetCtx => {
     const presets = presetCtx.get('agentPresets') as unknown as Partial<PresetRegistryInstaller>
     if (typeof presets.register === 'function') {
@@ -210,4 +222,4 @@ export function apply(ctx: Context): void {
   })
 }
 
-export default { name, inject, apply }
+export default { name, inject, Config, apply }

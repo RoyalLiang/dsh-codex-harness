@@ -1,8 +1,10 @@
 /** Install the user-visible Codex agent preset supplied by this bundle. */
 import type { Context } from '@deepseek-ai/cordis';
+import z from '@deepseek-ai/schemastery';
 /** Bundle plugin name for the preset installer. */
 export declare const name = "codex-preset-installer";
 export declare const inject: string[];
+export declare const Config: z<import("./settings.ts").CodexSettings, import("./settings.ts").CodexSettings>;
 /**
  * Install or upgrade the single shipped Codex preset.
  *
@@ -39,6 +41,7 @@ export declare function apply(ctx: Context): void;
 declare const _default: {
     name: string;
     inject: string[];
+    Config: z<import("./settings.ts").CodexSettings, import("./settings.ts").CodexSettings>;
     apply: typeof apply;
 };
 export default _default;

@@ -40,6 +40,8 @@ import {
   CODEX_SETTINGS_ENTRY, CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA,
 } from './settings.ts'
 import type { CodexSettings } from './settings.ts'
+import { readSettings, settingsDescriptor, settingsNamespaceMatches } from './settings-compat.ts'
+import type { CompatibleSettings } from './settings-compat.ts'
 import { codexCompactionMode } from './compaction.ts'
 import { CodexPresetEditor } from './preset-editor.ts'
 import { applyPromptSections, Config as PromptSectionsConfig } from './prompt-sections.ts'
@@ -218,9 +220,10 @@ interface LlmPiAiSettings {
 
 /** Persist only missing GPT capabilities into the user's existing pi-ai model config. */
 async function enrichConfiguredGptModels(ctx: Context): Promise<void> {
-  const settings = ctx.get('settings') as { get(ns: unknown): unknown; update(ns: unknown, patch: object): Promise<void> } | undefined
-  if (settings === undefined) return
-  const current = settings.get(LLM_PI_AI_SETTINGS) as LlmPiAiSettings | undefined
+  const settings = ctx.get('settings') as CompatibleSettings | undefined
+  if (typeof settings?.update !== 'function') return
+  const descriptor = settingsDescriptor(settings, LLM_PI_AI_SETTINGS)
+  const current = descriptor?.value as LlmPiAiSettings | undefined
   if (current?.providers === undefined) return
   const providers: Record<string, Record<string, unknown>> = {}
   let changed = false
@@ -243,7 +246,10 @@ async function enrichConfiguredGptModels(ctx: Context): Promise<void> {
       }
     }
   }
-  if (changed) await settings.update(LLM_PI_AI_SETTINGS, { providers })
+  if (changed && descriptor !== undefined) {
+    if (descriptor.revision === undefined) await settings.update(descriptor.ns, { providers })
+    else await settings.update(descriptor.ns, { providers }, descriptor.revision)
+  }
 }
 
 /** Keep newly edited GPT model entries enriched while Codex mode is mounted. */
@@ -306,6 +312,11 @@ function installCodexSettings(
         attached = true
         return true
       }
+    }
+    if (typeof (candidate as CompatibleSettings).describe === 'function') {
+      source = () => readSettings<CodexSettings>(candidate, CODEX_SETTINGS_NAMESPACE) ?? entry
+      attached = true
+      return true
     }
     if (typeof settings.installSection === 'function') {
       settings.installSection.call(settings, ctx, CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA, entry, {
@@ -414,12 +425,12 @@ function installCodexContextProjection(ctx: Context, current: () => CodexSetting
   // waiting for the settings source closure to refresh before synchronizing
   // already-open sessions.
   ctx.on('settings/updated', (ns, next) => {
-    if (ns === CODEX_SETTINGS_NAMESPACE) {
+    if (settingsNamespaceMatches(ns, CODEX_SETTINGS_NAMESPACE)) {
       syncAll((next as CodexSettings).contextWindow)
     }
   })
   ctx.on('settings/document-updated', ns => {
-    if (ns === CODEX_SETTINGS_NAMESPACE) syncAll()
+    if (settingsNamespaceMatches(ns, CODEX_SETTINGS_NAMESPACE)) syncAll()
   })
   syncAll()
 }

@@ -31,6 +31,29 @@ async function collect(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('remote compaction cancellation and fallback', () => {
+  it('uses Config-derived provider settings for the authenticated remote endpoint', async () => {
+    const request = vi.fn(async () => Response.json({
+      output: [{ type: 'compaction', encrypted_content: 'opaque' }],
+    }))
+    vi.stubGlobal('fetch', request)
+    const ctx = {
+      get: (name: string) => name === 'settings' ? {
+        describe: () => [{ ns: 'llm-pi-ai', value: { providers: {
+          relay: { api: 'openai-responses', baseURL: 'https://relay.example/v1', apiKeyEnv: 'RELAY_KEY' },
+        } } }],
+      } : { resolve: async () => ({ value: 'secret' }) },
+      logger: { warn: vi.fn() },
+    } as unknown as Context
+    const fallback = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' } } as const
+    })
+    const chunks = await collect(remoteCompactStream(ctx, compactionOptions(new AbortController().signal), fallback))
+    expect(request).toHaveBeenCalledWith('https://relay.example/v1/responses/compact', expect.objectContaining({
+      headers: expect.objectContaining({ authorization: 'Bearer secret' }),
+    }))
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(fallback).not.toHaveBeenCalled()
+  })
   it('does not publish a completed remote summary after cancellation', async () => {
     const controller = new AbortController()
     const cancelled = new Error('compaction cancelled during response decoding')

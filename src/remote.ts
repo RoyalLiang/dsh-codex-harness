@@ -7,6 +7,7 @@ import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { APPLY_PATCH_DESCRIPTION, APPLY_PATCH_GRAMMAR } from './patch.ts'
+import { readSettings } from './settings-compat.ts'
 
 export interface RemoteCodexConfig {
   hostedWebSearch: boolean
@@ -64,8 +65,7 @@ function isGptModel(model: unknown): model is string {
 }
 
 function settingsOf(ctx: Context): LlmSettings | undefined {
-  const provider = ctx.get('settings') as { get?: (namespace: unknown) => unknown } | undefined
-  return provider?.get?.(SETTINGS_NAMESPACE) as LlmSettings | undefined
+  return readSettings<LlmSettings>(ctx.get('settings'), SETTINGS_NAMESPACE)
 }
 
 function profileOf(ctx: Context, provider: string): ProviderProfile | undefined {

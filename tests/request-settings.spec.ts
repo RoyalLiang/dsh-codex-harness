@@ -74,13 +74,15 @@ describe('Codex request settings', () => {
     expect(buildCodexSystemPrompt({ systemPrompt: '' })).toBe('')
   })
 
-  it('reads the editable full prompt when each system prompt is assembled', () => {
+  it.each(['legacy', 'forms'])('reads the editable full prompt from %s settings when each system prompt is assembled', (mode) => {
     let settings = { fast: false, systemPrompt: 'First prompt.' }
     let sectionText: string | (() => string) | undefined
     const ctx = {
       fs: { sandboxMode: undefined },
       get: (name: string) => name === 'settings'
-        ? { get: (ns: unknown) => ns === CODEX_SETTINGS_NAMESPACE ? settings : undefined }
+        ? mode === 'forms'
+          ? { describe: () => [{ ns: 'codex-preset-installer', value: settings, revision: 1 }] }
+          : { get: (ns: unknown) => ns === CODEX_SETTINGS_NAMESPACE ? settings : undefined }
         : undefined,
       on: () => () => {},
       inject: () => {},
