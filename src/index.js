@@ -1,6 +1,7 @@
 import z from '@deepseek-ai/schemastery';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { adaptReasoning } from './controls.js';
+import { installPriorityTier } from './fast.js';
 import { instructions } from './policy.js';
 import { observeUsage } from './usage.js';
 
@@ -27,9 +28,10 @@ export function apply(ctx, config) {
   ctx.on('agent/request', async ({ agent, signal }, next) => {
     const selected = await next();
     const adapted = await adaptReasoning(selected, config.reasoningEffort, ctx.llm, signal);
+    const priority = /^gpt-/u.test(String(selected.model));
     controls.set(agent, {
       reasoning: adapted.reasoning,
-      fast: config.fast ? 'unsupported-public-api' : 'inherited',
+      fast: config.fast ? (priority ? 'applied' : 'not-applicable') : 'inherited',
       contextWindow: config.contextWindow ? 'unsupported-public-api' : 'inherited',
     });
     return adapted.config;
@@ -42,6 +44,7 @@ export function apply(ctx, config) {
     if (reports.size > 128) reports.delete(reports.keys().next().value);
   }));
   ctx.on('agent/disposed', ({ agent }) => reports.delete(agent.session.id));
+  if (config.fast) ctx.effect(() => installPriorityTier());
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'codex_harness_status',
     description: 'Read this agent\'s last observed model usage and requested control support. Missing metrics are unknown. This is not a billing ledger.',
