@@ -8,10 +8,10 @@ const GPT_MODEL = /^gpt-/u;
  * `gpt-*` models, and restored on dispose; upgrade when the host exposes a
  * public service-tier option.
  */
-export function installPriorityTier(target = globalThis) {
+export function installPriorityTier(target = globalThis, enabled = () => true) {
   const original = target.fetch;
   if (typeof original !== 'function') return () => {};
-  const patched = (input, init) => withPriority(original, input, init);
+  const patched = (input, init) => enabled() ? withPriority(original, input, init) : original(input, init);
   target.fetch = patched;
   return () => {
     if (target.fetch === patched) target.fetch = original;

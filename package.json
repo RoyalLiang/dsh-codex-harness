@@ -1,6 +1,6 @@
 {
   "name": "@royalliang/dsh-codex-harness",
-  "version": "0.1.4",
+  "version": "0.3.0",
   "description": "Codex-style agent preset, Fast toggle and honest usage diagnostics for DeepSeek Harness",
   "type": "module",
   "exports": {
@@ -13,7 +13,7 @@
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": {
       "platform": "web",
-      "inject": ["@deepseek-ai/dsh-client-ui-settings"]
+      "inject": ["@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-model-selection"]
     }
   },
   "scripts": {

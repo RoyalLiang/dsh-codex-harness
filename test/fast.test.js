@@ -24,6 +24,21 @@ test('withPriority leaves non-GPT, non-POST and explicit tier calls alone', () =
   assert.equal(calls, 4);
 });
 
+test('installPriorityTier reads the live toggle for every request', () => {
+  let enabled = false;
+  let seen;
+  const target = { fetch: (_input, init) => { seen = JSON.parse(init.body); } };
+  const original = target.fetch;
+  const restore = installPriorityTier(target, () => enabled);
+  for (const value of [false, true, false]) {
+    enabled = value;
+    target.fetch(URL_RESPONSES, { method: 'POST', body: gpt() });
+    assert.equal(seen.service_tier, value ? 'priority' : undefined);
+  }
+  restore();
+  assert.equal(target.fetch, original);
+});
+
 test('installPriorityTier patches and restores only its own fetch', () => {
   const target = { fetch: () => 'original' };
   const restore = installPriorityTier(target);

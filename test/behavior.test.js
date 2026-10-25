@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { usageReport, observeUsage } from '../src/usage.js';
+import { usageReport, observeUsage, accumulateUsage, recordUsage } from '../src/usage.js';
 import { adaptReasoning } from '../src/controls.js';
 import { instructions } from '../src/policy.js';
 
@@ -20,6 +20,62 @@ test('usage keeps disjoint cache counters and unknown fields', () => {
   assert.equal(usageReport({ inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 0, cacheReadTokens: 1, cacheWriteTokens: 0 }).totalInputTokens, null);
 });
 
+test('cumulative usage weights cache reads by tokens and keeps reasoning separate', () => {
+  const first = usageReport({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 90, cacheWriteTokens: 0, reasoningTokens: 3, totalTokens: 105 });
+  const second = usageReport({ inputTokens: 900, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 4, totalTokens: 910 });
+  const before = accumulateUsage(undefined, first);
+  const totals = accumulateUsage(before, second);
+  assert.equal(totals.calls, 2);
+  assert.equal(totals.totalInputTokens, 1000);
+  assert.equal(totals.cacheReadRate, 0.09);
+  assert.equal(totals.outputTokens, 15);
+  assert.equal(totals.reasoningTokens, 7);
+  assert.equal(totals.totalTokens, 1015);
+  assert.equal(before.calls, 1);
+});
+
+test('cumulative missing metrics remain unknown, including after later valid calls', () => {
+  const partial = usageReport({ inputTokens: 10, outputTokens: 2 });
+  const complete = usageReport({ inputTokens: 20, outputTokens: 3, cacheReadTokens: 30, cacheWriteTokens: 0 });
+  const totals = accumulateUsage(accumulateUsage(undefined, partial), complete);
+  assert.equal(totals.uncachedInputTokens, 30);
+  assert.equal(totals.outputTokens, 5);
+  assert.equal(totals.cacheReadTokens, null);
+  assert.equal(totals.totalInputTokens, null);
+  assert.equal(totals.cacheReadRate, null);
+  const unknown = accumulateUsage(totals, { ...usageReport(), finish: 'incomplete' });
+  assert.equal(unknown.calls, 3);
+  assert.equal(unknown.unknownUsageCalls, 1);
+  assert.equal(unknown.incompleteCalls, 1);
+  assert.equal(unknown.uncachedInputTokens, null);
+  assert.equal(accumulateUsage(unknown, complete).uncachedInputTokens, null);
+});
+
+test('cumulative counters reject unsafe sums without wrapping or inventing zeros', () => {
+  const report = usageReport({ inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+  const totals = accumulateUsage(accumulateUsage(undefined, report), report);
+  assert.equal(totals.uncachedInputTokens, null);
+  assert.equal(totals.totalInputTokens, null);
+  assert.equal(totals.cacheReadRate, null);
+  assert.equal(totals.outputTokens, 0);
+});
+
+test('usage separates auxiliary calls and bounds unfamiliar purpose groups', () => {
+  const report = { ...usageReport({ inputTokens: 10, outputTokens: 2 }), finish: 'stop' };
+  const first = recordUsage(undefined, report);
+  const next = recordUsage(first, report, 'compaction');
+  assert.equal(next.usage.purpose, 'compaction');
+  assert.equal(next.totals.calls, 2);
+  assert.equal(next.byPurpose.conversation.calls, 1);
+  assert.equal(next.byPurpose.compaction.calls, 1);
+  assert.deepEqual(Object.keys(first.byPurpose), ['conversation']);
+  let entry = recordUsage(next, report, 'session-title');
+  for (let index = 0; index < 100; index++) entry = recordUsage(entry, report, `unknown-${index}`);
+  assert.equal(Object.keys(entry.byPurpose).length, 4);
+  assert.equal(entry.byPurpose.other.calls, 100);
+  assert.equal(entry.usage.purpose, 'unknown-99');
+});
+
 test('stream wrapper preserves chunks and reports normal completion', async () => {
   const chunks = [{ type: 'text', text: 'ok' }, { type: 'usage', usage: { inputTokens: 2, outputTokens: 1 } }, { type: 'finish', reason: 'stop' }];
   let report;
@@ -28,6 +84,18 @@ test('stream wrapper preserves chunks and reports normal completion', async () =
   assert.deepEqual(observed, chunks);
   assert.equal(report.finish, 'stop');
   assert.equal(report.uncachedInputTokens, 2);
+});
+
+test('stream records only the final usage snapshot once', async () => {
+  const reports = [];
+  const stream = observeUsage(async function* () {
+    yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 1 } };
+    yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } };
+    yield { type: 'finish', reason: 'stop' };
+  }, value => reports.push(value));
+  for await (const chunk of stream) void chunk;
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].outputTokens, 5);
 });
 
 test('failure propagates and early cancellation finalizes without fabricated usage', async () => {

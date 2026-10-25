@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { apply, Config } from '../src/index.js';
 const defaults = Config({});
-assert.deepEqual(defaults, { enabled: true, fast: false, reasoningEffort: 'inherit', contextWindow: 0, instructions: '' });
+assert.deepEqual({ ...defaults, fast: defaults.fast.get() }, { enabled: true, fast: false, reasoningEffort: 'inherit', contextWindow: 0, instructions: '' });
+const schema = Config.toJSON();
+assert.equal(schema.refs[schema.refs[schema.uid].dict.fast].meta.volatile, true);
 assert.throws(() => Config({ contextWindow: -1 }));
 assert.throws(() => Config({ fast: 'yes' }));
 const listeners = new Map();
@@ -31,6 +33,30 @@ const report = await tool.execute({}, { agent });
 assert.equal(report.usage.uncachedInputTokens, 10);
 assert.equal(report.usage.cacheReadTokens, null);
 assert.equal(report.controls.reasoning, 'inherited');
+assert.equal(report.totals.calls, 1);
+assert.equal(report.byPurpose.conversation.uncachedInputTokens, 10);
+const compaction = listeners.get('llm/stream')({ sessionId: 'session-1', purpose: 'compaction' }, async function* () {
+  yield { type: 'usage', usage: { inputTokens: 5, outputTokens: 3, cacheReadTokens: 20, cacheWriteTokens: 0 } };
+  yield { type: 'finish', reason: 'stop' };
+});
+for await (const chunk of compaction) void chunk;
+const cumulative = await tool.execute({}, { agent });
+assert.equal(cumulative.usage.purpose, 'compaction');
+assert.equal(cumulative.totals.calls, 2);
+assert.equal(cumulative.totals.uncachedInputTokens, 15);
+assert.equal(cumulative.totals.totalInputTokens, null);
+assert.equal(cumulative.byPurpose.compaction.totalInputTokens, 25);
+assert.equal(cumulative.byPurpose.compaction.cacheReadRate, 0.8);
+assert.equal(cumulative.byPurpose.conversation.calls, 1);
+const failed = listeners.get('llm/stream')({ sessionId: 'session-1' }, async function* () { throw new Error('offline'); });
+await assert.rejects(async () => { for await (const chunk of failed) void chunk; }, /offline/);
+const failureReport = await tool.execute({}, { agent });
+assert.equal(failureReport.totals.unknownUsageCalls, 1);
+assert.equal(failureReport.totals.incompleteCalls, 1);
+assert.equal(failureReport.byPurpose.compaction.calls, 1);
+listeners.get('agent/disposed')({ agent });
+assert.equal((await tool.execute({}, { agent })).totals, null);
+assert.equal((await tool.execute({}, { agent })).byPurpose, null);
 assert.equal((await tool.execute({}, { agent: { session: { id: 'other' } } })).usage, null);
 for (let index = 0; index < 129; index++) {
   const call = listeners.get('llm/stream')({ sessionId: `bounded-${index}` }, async function* () {

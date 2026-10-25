@@ -8,13 +8,13 @@
         contextWindow: 0
         instructions: ''
 
-# Codex 模式: the standard Harness composition with a Codex persona, declared as
-# an ordinary @deepseek-ai/dsh-agent-preset row so the new-session picker offers it.
+# Codex 模式: the standard Harness tools with a Codex persona and tighter context budgets,
+# declared as an ordinary preset row for the new-session picker.
 - insert:
-    - id: preset-codex
+    - id: royalliang-codex-preset
       name: '@deepseek-ai/dsh-agent-preset'
       config:
-        id: codex-collaboration
+        id: royalliang-codex
         name: Codex 模式
         description: Codex 风格的编码代理：独立的 Codex 人格与 Harness 工具链。
         order: 10
@@ -74,6 +74,10 @@
                     Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
 
                     When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+          - id: spill-policy
+            name: '@deepseek-ai/dsh-spill-policy'
+            config:
+              maxInlineTokens: 4096
           - id: compaction
             name: cordis:group
             group: true
@@ -83,6 +87,8 @@
             config:
               - id: compaction-basic
                 name: '@deepseek-ai/dsh-compaction-basic'
+                config:
+                  maxTokens: 16384
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'
               - id: tool-result-pruner

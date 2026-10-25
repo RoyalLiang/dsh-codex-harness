@@ -15,10 +15,12 @@ test('patch declares the plugin entry and the Codex preset', async () => {
   const patch = await readFile(new URL('cordis.patch.yml', root), 'utf8');
   assert.equal(patch.match(/^- insert:/gmu)?.length, 2);
   assert.match(patch, /id: royalliang-codex-harness/u);
-  assert.match(patch, /id: preset-codex/u);
-  assert.match(patch, /id: codex-collaboration/u);
+  assert.match(patch, /id: royalliang-codex-preset/u);
+  assert.match(patch, /id: royalliang-codex/u);
   assert.match(patch, /name: Codex 模式/u);
   assert.match(patch, /prefix: You are Codex, a coding agent based on the \{\{model\}\} model\./u);
+  assert.match(patch, /name: '@deepseek-ai\/dsh-spill-policy'\s+config:\s+maxInlineTokens: 4096/u);
+  assert.match(patch, /name: '@deepseek-ai\/dsh-compaction-basic'\s+config:\s+maxTokens: 16384/u);
 });
 
 test('client bundle registers the input controls', async () => {
@@ -28,5 +30,5 @@ test('client bundle registers the input controls', async () => {
   assert.match(client, /const ENTRY = "royalliang-codex-harness"/u);
   assert.match(client, /scope\.configForms\.get\(ENTRY\)/u);
   assert.match(client, /form\.set\("fast", next\)/u);
-  assert.doesNotMatch(client, /modelDirectories/u);
+  assert.match(client, /scope\.modelDirectories\.directoryFor\(sessionId\)/u);
 });
