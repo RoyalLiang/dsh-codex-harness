@@ -1,6 +1,6 @@
 # 0.3.0
 
-This version releases the independent implementation on `release/0.3.0`. It does not replace the repository's existing `main` history. Existing 0.2.x configuration and feature compatibility is not guaranteed; install the archive through the desktop plugin manager and start a new Codex-mode session.
+This version provides the independent Codex Harness implementation. Existing 0.2.x configuration and feature compatibility is not guaranteed; install the archive through the desktop plugin manager and start a new Codex-mode session.
 
 - Add cumulative token usage and per-purpose diagnostics for conversation, compaction, and session-title calls. Preserve unknown counters, use token-weighted cache hit rates, and report reasoning tokens without double counting.
 - Bound Codex-mode tool results to 4,096 estimated tokens using the host's recoverable spill policy. Keep complete results available through recovery paths and preserve existing budgets for other presets.
