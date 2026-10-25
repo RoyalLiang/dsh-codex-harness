@@ -8,7 +8,7 @@
     "./client": { "default": "./lib/client.js" },
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
-  "files": ["src", "lib", "cordis.patch.yml", "README.md", "README.en.md", "LICENSE"],
+  "files": ["src", "lib", "cordis.patch.yml", "README.md", "README.en.md", "RELEASE_NOTES.md", "LICENSE"],
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": {

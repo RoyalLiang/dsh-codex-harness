@@ -11,6 +11,19 @@ test('package publishes the client bundle', async () => {
   assert.equal(pkg.dsh.client.platform, 'web');
 });
 
+test('published README links resolve to included package documents', async () => {
+  const pkg = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
+  for (const file of ['README.md', 'README.en.md']) {
+    const text = await readFile(new URL(file, root), 'utf8');
+    for (const [, link] of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/gu)) {
+      if (/^(?:https?:|#)/u.test(link)) continue;
+      const target = link.split('#')[0];
+      assert.ok(pkg.files.some(entry => target === entry || target.startsWith(`${entry}/`)), `${file}: ${target} is not published`);
+      await readFile(new URL(target, root));
+    }
+  }
+});
+
 test('patch declares the plugin entry and the Codex preset', async () => {
   const patch = await readFile(new URL('cordis.patch.yml', root), 'utf8');
   assert.equal(patch.match(/^- insert:/gmu)?.length, 2);

@@ -36,14 +36,21 @@ export function apply(ctx, config) {
     });
     return adapted.config;
   });
-  ctx.on('llm/stream', (options, next) => observeUsage(next, report => {
-    if (options.sessionId === undefined) return;
-    // shortcut: retain in-memory counters for 128 sessions; use durable host logs for accounting.
-    const entry = recordUsage(reports.get(options.sessionId), report, options.purpose);
+  ctx.on('llm/stream', (options, next) => {
+    if (options.sessionId === undefined) return next();
+    // Keep entry identity so late streams cannot recreate disposed or evicted reports.
+    const entry = reports.get(options.sessionId) ?? {};
     reports.delete(options.sessionId);
     reports.set(options.sessionId, entry);
+    // shortcut: retain in-memory counters for 128 sessions; use durable host logs for accounting.
     if (reports.size > 128) reports.delete(reports.keys().next().value);
-  }));
+    return observeUsage(next, report => {
+      if (reports.get(options.sessionId) !== entry) return;
+      Object.assign(entry, recordUsage(entry.totals ? entry : undefined, report, options.purpose));
+      reports.delete(options.sessionId);
+      reports.set(options.sessionId, entry);
+    });
+  });
   ctx.on('agent/disposed', ({ agent }) => reports.delete(agent.session.id));
   ctx.effect(() => installPriorityTier(globalThis, () => config.fast.get()));
   ctx.effect(() => ctx.tools.register(defineTool({

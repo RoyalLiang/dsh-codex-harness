@@ -57,13 +57,48 @@ assert.equal(failureReport.byPurpose.compaction.calls, 1);
 listeners.get('agent/disposed')({ agent });
 assert.equal((await tool.execute({}, { agent })).totals, null);
 assert.equal((await tool.execute({}, { agent })).byPurpose, null);
+const concurrent = [2, 3].map(inputTokens => listeners.get('llm/stream')({ sessionId: agent.session.id }, async function* () {
+  yield { type: 'usage', usage: { inputTokens, outputTokens: 0 } };
+}));
+await Promise.all(concurrent.map(call => call.next()));
+assert.equal((await tool.execute({}, { agent })).usage, null);
+await Promise.all(concurrent.map(call => call.return()));
+assert.equal((await tool.execute({}, { agent })).totals.calls, 2);
+assert.equal((await tool.execute({}, { agent })).totals.uncachedInputTokens, 5);
+listeners.get('agent/disposed')({ agent });
+const delayed = listeners.get('llm/stream')({ sessionId: agent.session.id }, async function* () {
+  yield { type: 'usage', usage: { inputTokens: 99, outputTokens: 1 } };
+});
+await delayed.next();
+listeners.get('agent/disposed')({ agent });
+await delayed.return();
+assert.equal((await tool.execute({}, { agent })).totals, null, 'late usage must not recreate disposed session reports');
+const stale = listeners.get('llm/stream')({ sessionId: agent.session.id }, async function* () {
+  yield { type: 'usage', usage: { inputTokens: 99, outputTokens: 1 } };
+});
+await stale.next();
+listeners.get('agent/disposed')({ agent });
+const reopened = listeners.get('llm/stream')({ sessionId: agent.session.id }, async function* () {
+  yield { type: 'usage', usage: { inputTokens: 3, outputTokens: 1 } };
+});
+for await (const chunk of reopened) void chunk;
+await stale.return();
+assert.equal((await tool.execute({}, { agent })).totals.calls, 1);
+assert.equal((await tool.execute({}, { agent })).totals.uncachedInputTokens, 3);
 assert.equal((await tool.execute({}, { agent: { session: { id: 'other' } } })).usage, null);
+const evictedAgent = { session: { id: 'evicted-in-flight' } };
+const evicted = listeners.get('llm/stream')({ sessionId: evictedAgent.session.id }, async function* () {
+  yield { type: 'usage', usage: { inputTokens: 99, outputTokens: 1 } };
+});
+await evicted.next();
 for (let index = 0; index < 129; index++) {
   const call = listeners.get('llm/stream')({ sessionId: `bounded-${index}` }, async function* () {
     yield { type: 'usage', usage: { inputTokens: 1, outputTokens: 0 } };
   });
   for await (const chunk of call) void chunk;
 }
+await evicted.return();
+assert.equal((await tool.execute({}, { agent: evictedAgent })).usage, null);
 assert.equal((await tool.execute({}, { agent: { session: { id: 'bounded-0' } } })).usage, null);
 assert.equal((await tool.execute({}, { agent: { session: { id: 'bounded-128' } } })).usage.uncachedInputTokens, 1);
 listeners.get('agent/disposed')({ agent });
@@ -80,6 +115,14 @@ const requested = (await tool.execute({}, { agent })).controls;
 assert.equal(requested.fast, 'applied');
 await listeners.get('agent/request')({ agent }, async () => ({ provider: 'p', model: 'deepseek-v4-flash' }));
 assert.equal((await tool.execute({}, { agent })).controls.fast, 'not-applicable');
+const statusTool = tool;
+const unloading = listeners.get('llm/stream')({ sessionId: agent.session.id }, async function* () {
+  yield { type: 'usage', usage: { inputTokens: 99, outputTokens: 1 } };
+});
+await unloading.next();
+listeners.get('dispose')();
+await unloading.return();
+assert.equal((await statusTool.execute({}, { agent })).totals, null);
 for (const dispose of disposers) dispose?.();
 assert.equal(globalThis.fetch, originalFetch);
 assert.equal(requested.contextWindow, 'unsupported-public-api');
