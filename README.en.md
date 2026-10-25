@@ -46,6 +46,18 @@ Toggle Fast or select a reasoning effort in the input bar. Changes apply to subs
 
 The host continues to manage tool execution, permissions, approval, cancellation, and subagent scheduling. Policies do not grant additional permissions, and cancellation does not undo changes already made.
 
+### Image input
+
+Codex mode uses the selected model's image capability. If sending an image reports that the model does not support images, check the provider configuration: custom `dsh-llm-pi-ai` models absent from its built-in catalog default to text input. After verifying that the model on that gateway supports images, declare the accepted input types on that model entry:
+
+```yaml
+models:
+  - id: your-vision-model
+    input: [text, image]
+```
+
+This field belongs to the host's provider configuration, not the Codex plugin. Do not enable it for unverified models; a declaration does not give a text-only model vision. Confirm that the host has loaded the saved configuration before sending an image; restart the host if its capability list has not updated.
+
 ## Configuration
 
 Edit these fields in the host's plugin settings. Keep `reasoningEffort: inherit` when using the input-bar selector.

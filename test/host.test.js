@@ -12,8 +12,13 @@ test('real host lifecycle smoke', async t => {
   await ctx.plugin(SystemPrompt);
   await ctx.plugin(ToolRuntime);
   await ctx.plugin(LlmRuntime);
+  let dispatched;
   class ScriptedAdapter extends LlmAdapter {
-    async *stream() {
+    async resolveModel(provider, model) {
+      return { provider, id: model, name: model, inputModalities: model === 'vision' ? ['text', 'image'] : ['text'] };
+    }
+    async *stream(options) {
+      dispatched = options;
       yield { type: 'usage', usage: { inputTokens: 1, outputTokens: 0 } };
       yield { type: 'usage', usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 0 } };
       yield { type: 'finish', reason: { kind: 'stop' } };
@@ -45,6 +50,21 @@ test('real host lifecycle smoke', async t => {
       assert.equal(next.totals.calls, 2);
       assert.equal(next.byPurpose.conversation.calls, 1);
       assert.equal(next.byPurpose.compaction.calls, 1);
+    });
+    await t.test('Codex preserves images for vision models and respects text-only capability', async () => {
+      const image = { type: 'image', attachment: { attachmentId: 'vision-fixture', mediaType: 'image/png', width: 120, height: 80 } };
+      const messages = [{ role: 'user', content: [{ type: 'text', text: 'Describe this image.' }, image] }];
+      const before = structuredClone(messages);
+      const vision = await ctx.llm.resolveModelInfo('scenario', 'vision');
+      assert.deepEqual(vision.inputModalities, ['text', 'image']);
+      for await (const chunk of ctx.llm.stream({ ...options, model: 'vision', messages, sessionId: 'vision-smoke' })) void chunk;
+      assert.deepEqual(dispatched.messages, before);
+      const textOnly = await ctx.llm.resolveModelInfo('scenario', 'scripted');
+      assert.deepEqual(textOnly.inputModalities, ['text']);
+      for await (const chunk of ctx.llm.stream({ ...options, messages, sessionId: 'text-smoke' })) void chunk;
+      assert.ok(dispatched.messages.every(message => message.content.every(block => block.type === 'text')));
+      assert.ok(dispatched.messages.some(message => message.content.some(block => block.text.includes('image omitted because this model accepts text only'))));
+      assert.deepEqual(messages, before);
     });
     await t.test('session disposal isolates a reopened session from the old stream', async () => {
       const stale = ctx.llm.stream(options)[Symbol.asyncIterator]();
